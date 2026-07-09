@@ -464,7 +464,7 @@ pub fn list_chats(project_id: Option<&str>) -> Result<Vec<ChatSession>, String> 
         let _ = &mut session;
         out.push(session);
     }
-    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    out.sort_by_key(|session| std::cmp::Reverse(session.updated_at));
     Ok(out)
 }
 
