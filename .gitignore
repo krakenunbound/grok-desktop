@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build
+/build
+/.svelte-kit
+/dist
+/src-tauri/target
+
+# Logs / OS
+*.log
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

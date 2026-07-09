@@ -1,0 +1,26 @@
+[package]
+name = "grok-desktop"
+version = "0.2.0"
+description = "Lightweight desktop GUI for Grok Build CLI"
+authors = ["The Kraken"]
+edition = "2021"
+
+[lib]
+name = "grok_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml_edit = "0.25"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "io-util", "sync", "time"] }
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6"
+uuid = { version = "1", features = ["v4", "serde"] }
+base64 = "0.22"
+which = "7"

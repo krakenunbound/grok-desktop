@@ -1,0 +1,153 @@
+/* Grok Desktop — dark Codex-inspired theme with Grok sky-blue accent */
+
+:root {
+  color-scheme: dark;
+  --bg: #0c0c0e;
+  --sidebar: #101014;
+  --surface: #16161a;
+  --surface-2: #1e1e24;
+  --border: #2a2a32;
+  --text: #ececf1;
+  --muted: #8b8b9a;
+  --accent: #38bdf8;
+  --accent-dim: #0ea5e9;
+  --accent-soft: #7dd3fc;
+  --accent-contrast: #03131f;
+  --accent-glow: rgba(56, 189, 248, 0.36);
+  --accent-gradient: linear-gradient(135deg, #7dd3fc, #0ea5e9);
+  --user-bg: #0d1821;
+  --user-border: #16425f;
+  --assistant-bg: #141418;
+  --danger: #ff5c5c;
+  --focus-ring: #7dd3fc;
+  font-family:
+    "Segoe UI",
+    Inter,
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  font-weight: 400;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#app,
+body > div {
+  height: 100%;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  color: inherit;
+}
+
+/* Keyboard accessibility — visible focus without mouse clutter */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+button:disabled,
+textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Prefer reduced motion when requested */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2e2e38;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3c3c48;
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* Toast host */
+.toast {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 100;
+  background: #2a1210;
+  border: 1px solid #5a2820;
+  color: #ffc9b8;
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  max-width: min(420px, 90vw);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  font-size: 0.88rem;
+  animation: toastIn 0.2s ease;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Visually hidden but available to screen readers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

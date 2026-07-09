@@ -1,0 +1,265 @@
+//! Image drop/paste handling — save bytes to managed temp_images folder.
+
+use crate::config::{self, AppSettings};
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
+
+const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+
+/// Result returned to the frontend after saving an image.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedImage {
+    pub id: String,
+    pub path: String,
+    pub filename: String,
+    pub mime: String,
+    pub size_bytes: u64,
+}
+
+/// Decode a data-URL or raw base64 payload and write it under temp_images.
+pub fn save_image_base64(
+    settings: &AppSettings,
+    data_base64: &str,
+    mime_hint: Option<String>,
+    filename_hint: Option<String>,
+) -> Result<SavedImage, String> {
+    // Reject absurd payloads before base64 decode (base64 ~4/3 overhead).
+    if data_base64.len() > (MAX_IMAGE_BYTES as usize) * 2 {
+        return Err("Image payload too large".into());
+    }
+
+    let (mime, b64_payload) = parse_payload(data_base64, mime_hint)?;
+    if !is_allowed_image_mime(&mime) {
+        return Err(format!("Unsupported image type: {mime}"));
+    }
+
+    let bytes = B64
+        .decode(b64_payload.as_bytes())
+        .map_err(|e| format!("Invalid base64 image data: {e}"))?;
+
+    if bytes.is_empty() {
+        return Err("Empty image payload".into());
+    }
+    if bytes.len() as u64 > MAX_IMAGE_BYTES {
+        return Err("Image exceeds 20 MB limit".into());
+    }
+    if !looks_like_image(&bytes) {
+        return Err("Payload does not look like a supported image".into());
+    }
+
+    let ext = extension_for_mime(&mime);
+    let id = Uuid::new_v4().to_string();
+    let filename = filename_hint
+        .filter(|f| !f.trim().is_empty())
+        .map(|f| sanitize_filename(&f, ext))
+        .unwrap_or_else(|| {
+            let stamp = Utc::now().format("%Y%m%d_%H%M%S");
+            format!("img_{stamp}_{}.{ext}", &id[..8])
+        });
+
+    let dir = config::temp_images_dir(settings)?;
+    let path = unique_path(&dir, &filename)?;
+    fs::write(&path, &bytes).map_err(|e| format!("Failed to write image: {e}"))?;
+
+    Ok(SavedImage {
+        id,
+        path: path.to_string_lossy().to_string(),
+        filename: path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or(filename),
+        mime,
+        size_bytes: bytes.len() as u64,
+    })
+}
+
+/// Copy an existing local file into temp_images (for drag-drop of file paths).
+pub fn import_image_path(settings: &AppSettings, source_path: &str) -> Result<SavedImage, String> {
+    if source_path.trim().is_empty() || source_path.len() > 4096 {
+        return Err("Invalid image path".into());
+    }
+
+    let source = PathBuf::from(source_path);
+    let source = source
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve image path: {e}"))?;
+
+    if !source.is_file() {
+        return Err(format!("File not found: {source_path}"));
+    }
+
+    let ext = source
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if !is_allowed_image_ext(&ext) {
+        return Err(format!(
+            "Unsupported image extension '.{ext}' (allowed: png, jpg, jpeg, gif, webp, bmp)"
+        ));
+    }
+
+    let meta = fs::metadata(&source).map_err(|e| format!("Stat image failed: {e}"))?;
+    if meta.len() > MAX_IMAGE_BYTES {
+        return Err("Image exceeds 20 MB limit".into());
+    }
+
+    let bytes = fs::read(&source).map_err(|e| format!("Read image failed: {e}"))?;
+    if !looks_like_image(&bytes) {
+        return Err("File does not look like a supported image".into());
+    }
+
+    let mime = mime_for_extension(&ext);
+    let id = Uuid::new_v4().to_string();
+    let stamp = Utc::now().format("%Y%m%d_%H%M%S");
+    let filename = format!("img_{stamp}_{}.{ext}", &id[..8]);
+
+    let dir = config::temp_images_dir(settings)?;
+    let dest = unique_path(&dir, &filename)?;
+    fs::write(&dest, &bytes).map_err(|e| format!("Failed to copy image: {e}"))?;
+
+    Ok(SavedImage {
+        id,
+        path: dest.to_string_lossy().to_string(),
+        filename: dest
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or(filename),
+        mime,
+        size_bytes: bytes.len() as u64,
+    })
+}
+
+fn parse_payload(data: &str, mime_hint: Option<String>) -> Result<(String, String), String> {
+    let trimmed = data.trim();
+    if let Some(rest) = trimmed.strip_prefix("data:") {
+        let (meta, payload) = rest
+            .split_once(',')
+            .ok_or_else(|| "Malformed data URL".to_string())?;
+        let mime = meta
+            .split(';')
+            .next()
+            .filter(|m| !m.is_empty())
+            .unwrap_or("image/png")
+            .to_string();
+        if !meta.contains("base64") {
+            return Err("Only base64 data URLs are supported".into());
+        }
+        return Ok((mime, payload.to_string()));
+    }
+    let mime = mime_hint.unwrap_or_else(|| "image/png".to_string());
+    Ok((mime, trimmed.to_string()))
+}
+
+fn is_allowed_image_mime(mime: &str) -> bool {
+    matches!(
+        mime.to_lowercase().as_str(),
+        "image/jpeg" | "image/jpg" | "image/png" | "image/gif" | "image/webp" | "image/bmp"
+    )
+}
+
+fn is_allowed_image_ext(ext: &str) -> bool {
+    matches!(ext, "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp")
+}
+
+fn extension_for_mime(mime: &str) -> &'static str {
+    match mime.to_lowercase().as_str() {
+        "image/jpeg" | "image/jpg" => "jpg",
+        "image/png" => "png",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/bmp" => "bmp",
+        _ => "png",
+    }
+}
+
+fn mime_for_extension(ext: &str) -> String {
+    match ext {
+        "jpg" | "jpeg" => "image/jpeg".into(),
+        "png" => "image/png".into(),
+        "gif" => "image/gif".into(),
+        "webp" => "image/webp".into(),
+        "bmp" => "image/bmp".into(),
+        _ => "application/octet-stream".into(),
+    }
+}
+
+/// Magic-byte sniff so we do not write arbitrary binaries as "images".
+fn looks_like_image(bytes: &[u8]) -> bool {
+    if bytes.len() < 4 {
+        return false;
+    }
+    // PNG
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return true;
+    }
+    // JPEG
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return true;
+    }
+    // GIF
+    if bytes.starts_with(b"GIF8") {
+        return true;
+    }
+    // BMP
+    if bytes.starts_with(b"BM") {
+        return true;
+    }
+    // WEBP: RIFF....WEBP
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return true;
+    }
+    false
+}
+
+fn sanitize_filename(name: &str, default_ext: &str) -> String {
+    // Use basename only — strip any path segments from hostile hints.
+    let name = Path::new(name)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("image");
+    let base: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let base = base.trim_matches('.').to_string();
+    if base.is_empty() {
+        return format!("image.{default_ext}");
+    }
+    // Force a single safe extension from mime, ignore attacker-controlled multi-ext.
+    let stem = base.split('.').next().unwrap_or("image");
+    let stem: String = stem.chars().take(80).collect();
+    format!("{stem}.{default_ext}")
+}
+
+fn unique_path(dir: &Path, filename: &str) -> Result<PathBuf, String> {
+    let mut path = dir.join(filename);
+    if !path.exists() {
+        return Ok(path);
+    }
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "img".into());
+    let ext = path
+        .extension()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "png".into());
+    for i in 1..1000 {
+        path = dir.join(format!("{stem}_{i}.{ext}"));
+        if !path.exists() {
+            return Ok(path);
+        }
+    }
+    Err("Could not allocate unique image filename".into())
+}

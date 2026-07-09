@@ -1,0 +1,42 @@
+# Allow every application command used by the Grok Desktop frontend.
+[[permission]]
+identifier = "allow-all-grok-commands"
+description = "Full access to Grok Desktop IPC commands for the main window"
+commands.allow = [
+  "get_settings",
+  "save_settings",
+  "get_models",
+  "get_app_data_dir",
+  "list_projects",
+  "add_project",
+  "remove_project",
+  "set_project_pinned",
+  "set_project_archived",
+  "update_project_notes",
+  "touch_project",
+  "get_grok_inventory",
+  "set_mcp_server_enabled",
+  "set_plugin_enabled",
+  "get_grok_cli_overview",
+  "list_chats",
+  "load_chat",
+  "save_chat",
+  "delete_chat",
+  "new_chat",
+  "append_chat_message",
+  "start_grok_session",
+  "send_message",
+  "stop_session",
+  "set_session_yolo",
+  "set_session_model",
+  "get_session",
+  "is_session_running",
+  "save_image_base64",
+  "import_image_path",
+  "get_status",
+  "resolve_grok_binary",
+  "report_ui_ready",
+  "report_ui_failed",
+  "get_launch_status",
+  "retry_ui_load"
+]
