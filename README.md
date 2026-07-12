@@ -2,7 +2,7 @@
 
 Lightweight desktop GUI for the **Grok Build** CLI — Codex-inspired dark UI, YOLO mode, project switching, image drop/paste, system tray, chat history, and Grok CLI context visibility.
 
-**Current version:** 0.2.0  
+**Current version:** 0.3.0
 **Stack:** Tauri 2 (Rust) + Svelte 5 (SvelteKit SPA)  
 **Platform:** Windows 10/11 primary (macOS/Linux later)
 

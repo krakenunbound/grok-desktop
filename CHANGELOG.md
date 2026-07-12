@@ -2,7 +2,7 @@
 
 All notable changes to Grok Desktop are tracked here.
 
-## Unreleased
+## 0.3.0 - 2026-07-12
 
 ### Added
 
