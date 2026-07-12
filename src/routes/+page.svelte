@@ -230,7 +230,7 @@
     <div class="main">
       <header class="topbar">
         <div class="left">
-          <h1 class="title">Grok Desktop</h1>
+          <h1 class="title">Grok Desktop <span class="version">v0.4.0</span></h1>
         </div>
         <div class="right" role="toolbar" aria-label="Session controls">
           <UsageMeter />
@@ -359,6 +359,13 @@
     font-weight: 700;
     font-size: 0.95rem;
     letter-spacing: 0.02em;
+  }
+  .version {
+    margin-left: 0.35rem;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0;
   }
   .right {
     display: flex;
