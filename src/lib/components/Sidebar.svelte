@@ -26,7 +26,8 @@
     selectedModel,
     yoloEnabled,
   } from "$lib/stores/chat";
-  import { open } from "@tauri-apps/plugin-dialog";
+  import { invoke } from "@tauri-apps/api/core";
+  import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 
   interface Props {
     collapsed: boolean;
@@ -38,6 +39,20 @@
   let openProjectMenu = $state<string | null>(null);
   let openChatMenu = $state<string | null>(null);
   let now = $state(Date.now());
+  let searchQuery = $state("");
+  let searchInput = $state<HTMLInputElement>();
+  let normalizedQuery = $derived(searchQuery.trim().toLowerCase());
+  let filteredPinnedProjects = $derived(
+    $pinnedProjects.filter((project) => matchesProject(project)),
+  );
+  let filteredRecentProjects = $derived(
+    $recentProjects.filter((project) => matchesProject(project)),
+  );
+  let filteredChats = $derived(
+    $chatList.filter(
+      (chat) => !normalizedQuery || chat.title.toLowerCase().includes(normalizedQuery),
+    ),
+  );
 
   onMount(() => {
     const timer = window.setInterval(() => (now = Date.now()), 60_000);
@@ -59,6 +74,14 @@
     if (diff < month) return `${Math.floor(diff / (7 * day))}w ago`;
     if (diff < 12 * month) return `${Math.floor(diff / month)}mo ago`;
     return `${Math.floor(diff / (12 * month))}y ago`;
+  }
+
+  function matchesProject(project: Project): boolean {
+    if (!normalizedQuery) return true;
+    return [project.name, project.path, project.project_type, project.notes]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedQuery);
   }
 
   function toggleProjectMenu(id: string, event: MouseEvent) {
@@ -183,6 +206,22 @@
     await deleteChat(id);
   }
 
+  async function onExportChat(id: string, title: string) {
+    openChatMenu = null;
+    try {
+      const safeTitle = (title || "Grok chat").replace(/[<>:"/\\|?*]/g, "_").slice(0, 80);
+      const destination = await saveDialog({
+        title: "Export Grok chat",
+        defaultPath: `${safeTitle}.md`,
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      });
+      if (!destination) return;
+      await invoke("export_chat_markdown", { chatId: id, destination });
+    } catch (error) {
+      showError(error);
+    }
+  }
+
   async function saveNotes(project: Project, event: Event) {
     const notes = (event.currentTarget as HTMLTextAreaElement).value;
     if (notes !== project.notes) {
@@ -201,9 +240,15 @@
     openChatMenu = null;
   }}
   onkeydown={(event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      searchInput?.focus();
+      searchInput?.select();
+    }
     if (event.key === "Escape") {
       openProjectMenu = null;
       openChatMenu = null;
+      if (document.activeElement === searchInput && searchQuery) searchQuery = "";
     }
   }}
 />
@@ -239,12 +284,31 @@
       </label>
     </div>
 
+    <label class="search">
+      <span aria-hidden="true">⌕</span>
+      <input
+        bind:this={searchInput}
+        bind:value={searchQuery}
+        type="search"
+        placeholder="Search projects and chats"
+        aria-label="Search projects and chats"
+      />
+      {#if searchQuery}
+        <button type="button" onclick={() => (searchQuery = "")} aria-label="Clear search">×</button
+        >
+      {/if}
+    </label>
+
     <div class="section">
       <div class="label">Pinned Projects</div>
-      {#if $pinnedProjects.length === 0}
-        <div class="empty-hint">Pinned folders appear here after you open and pin a project.</div>
+      {#if filteredPinnedProjects.length === 0}
+        <div class="empty-hint">
+          {normalizedQuery
+            ? "No matching pinned projects."
+            : "Pinned folders appear here after you open and pin a project."}
+        </div>
       {:else}
-        {#each $pinnedProjects as p (p.id)}
+        {#each filteredPinnedProjects as p (p.id)}
           <div class="project-row" class:active={$activeProjectId === p.id}>
             <button
               type="button"
@@ -297,7 +361,7 @@
 
     <div class="section projects">
       <div class="label">Recent Projects</div>
-      {#each $recentProjects as p (p.id)}
+      {#each filteredRecentProjects as p (p.id)}
         <div
           class="project-row"
           class:active={$activeProjectId === p.id}
@@ -349,13 +413,17 @@
           >
         {/if}
       {:else}
-        <div class="empty-hint">No projects yet. Use Open Project... to add a folder.</div>
+        <div class="empty-hint">
+          {normalizedQuery
+            ? "No matching recent projects."
+            : "No projects yet. Use Open Project... to add a folder."}
+        </div>
       {/each}
     </div>
 
     <div class="section chats">
       <div class="label">Chats</div>
-      {#each $chatList as c (c.id)}
+      {#each filteredChats as c (c.id)}
         <div class="chat-row" class:active={$currentChat?.id === c.id}>
           <button type="button" class="chat" onclick={() => selectChat(c.id)}>
             <span>{c.title || "Untitled"}</span>
@@ -373,6 +441,9 @@
           </button>
           {#if openChatMenu === c.id}
             <div class="chat-menu" role="menu" aria-label={`${c.title || "Untitled"} actions`}>
+              <button type="button" role="menuitem" onclick={() => onExportChat(c.id, c.title)}>
+                Export Markdown
+              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -383,7 +454,9 @@
           {/if}
         </div>
       {:else}
-        <div class="empty-hint">No chats for this project.</div>
+        <div class="empty-hint">
+          {normalizedQuery ? "No matching chats." : "No chats for this project."}
+        </div>
       {/each}
     </div>
   {/if}
@@ -484,6 +557,40 @@
     color: var(--muted);
     font-size: 0.72rem;
     white-space: nowrap;
+  }
+  .search {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 34px;
+    padding: 0 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--muted);
+  }
+  .search:focus-within {
+    border-color: var(--accent-dim);
+  }
+  .search input {
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 0.76rem;
+  }
+  .search input::-webkit-search-cancel-button {
+    display: none;
+  }
+  .search button {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0.1rem;
   }
   .section {
     display: flex;
@@ -687,11 +794,14 @@
     border-radius: 6px;
     background: transparent;
     padding: 0.48rem 0.55rem;
-    color: #ffb3b3;
+    color: var(--text);
     font: inherit;
     font-size: 0.76rem;
     cursor: pointer;
     text-align: left;
+  }
+  .chat-menu .danger {
+    color: #ffb3b3;
   }
   .chat-menu button:hover,
   .chat-menu button:focus-visible {

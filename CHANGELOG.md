@@ -2,6 +2,16 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## Unreleased
+
+### Added
+
+- Unified project and chat search with a `Ctrl+K` shortcut.
+- Per-chat Markdown transcript export from the chat action menu.
+- Message copy and retry actions, plus one-click copy controls on fenced code blocks.
+- General file, image, video, and audio attachments with drag-and-drop previews.
+- Composer-level model and access-mode controls and a local Grok usage/credit meter.
+
 ## 0.2.0 - 2026-07-08
 
 ### Added

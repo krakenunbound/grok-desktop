@@ -5,12 +5,11 @@
 - Add persistent Grok agent transport to reduce per-turn startup latency.
 - Add GitHub release packaging with installer artifacts.
 - Add smoke tests around project actions, settings, image attach, and chat persistence.
-- Add import/export for app settings and chat history.
+- Add import plus bulk export for app settings and chat history. Individual chats can already be exported as Markdown.
 
 ## Project Management
 
 - Bulk project actions.
-- Better project search/filtering.
 - Optional per-project default model and permission profile.
 - Worktree creation/removal from the GUI.
 

@@ -5,8 +5,10 @@
 
   interface Props {
     message: ChatMessage;
+    onretry?: () => void;
   }
-  let { message }: Props = $props();
+  let { message, onretry }: Props = $props();
+  let copied = $state(false);
 
   let showRaw = $derived(!!message.rawVisible || ($verboseMode && !!message.rawContent));
   let hasRawExtras = $derived(
@@ -47,7 +49,7 @@
     let html = escaped.replace(
       /```(\w*)\n([\s\S]*?)```/g,
       (_m, lang, code) =>
-        `<pre class="code-block" data-lang="${String(lang || "text").replace(/[^\w-]/g, "")}"><code>${code}</code></pre>`,
+        `<pre class="code-block" data-lang="${String(lang || "text").replace(/[^\w-]/g, "")}"><button type="button" class="copy-code" data-copy-code>Copy</button><code>${code}</code></pre>`,
     );
     html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
     html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
@@ -79,6 +81,33 @@
   function extension(src: string): string {
     return filename(src).split(".").pop()?.toUpperCase().slice(0, 6) || "FILE";
   }
+
+  async function copyText(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+      window.setTimeout(() => (copied = false), 1400);
+    } catch {
+      copied = false;
+    }
+  }
+
+  function onBodyClick(event: MouseEvent) {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-copy-code]");
+    if (!button) return;
+    const code = button.parentElement?.querySelector("code")?.textContent ?? "";
+    void copyText(code);
+    button.textContent = "Copied";
+    window.setTimeout(() => (button.textContent = "Copy"), 1400);
+  }
+
+  function onBodyKeydown(event: KeyboardEvent) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !target.matches("[data-copy-code]")) return;
+    event.preventDefault();
+    target.click();
+  }
 </script>
 
 {#if !(message.role === "assistant" && message.streaming && !message.content && !$verboseMode)}
@@ -89,8 +118,24 @@
     class:system={message.role === "system"}
     class:streaming={message.streaming}
   >
-    <div class="role">
-      {message.role === "user" ? "You" : message.role === "assistant" ? "Grok" : "System"}
+    <div class="message-head">
+      <div class="role">
+        {message.role === "user" ? "You" : message.role === "assistant" ? "Grok" : "System"}
+      </div>
+      {#if !message.streaming}
+        <div class="message-actions">
+          {#if message.role === "user" && onretry}
+            <button type="button" onclick={onretry} title="Send this message again">Retry</button>
+          {/if}
+          <button
+            type="button"
+            onclick={() => copyText(displayContent(message.content))}
+            title="Copy message"
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+      {/if}
     </div>
 
     {#if message.images?.length}
@@ -116,7 +161,14 @@
       </div>
     {/if}
 
-    <div class="body">
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions: delegated handlers serve the interactive code-copy buttons rendered from sanitized Markdown -->
+    <div
+      class="body"
+      role="group"
+      aria-label="Message content"
+      onclick={onBodyClick}
+      onkeydown={onBodyKeydown}
+    >
       {@html renderContent(message.content)}
       {#if message.streaming && $verboseMode}
         <span class="cursor">▍</span>
@@ -171,8 +223,39 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--muted);
-    margin-bottom: 0.35rem;
     font-weight: 600;
+  }
+  .message-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 1.35rem;
+    margin-bottom: 0.35rem;
+  }
+  .message-actions {
+    display: flex;
+    gap: 0.2rem;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+  .msg:hover .message-actions,
+  .message-actions:focus-within {
+    opacity: 1;
+  }
+  .message-actions button {
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--muted);
+    padding: 0.18rem 0.35rem;
+    font: inherit;
+    font-size: 0.68rem;
+    cursor: pointer;
+  }
+  .message-actions button:hover {
+    color: var(--text);
+    background: var(--surface-2);
   }
   .msg.user .role {
     color: var(--accent);
@@ -270,6 +353,7 @@
     word-break: break-word;
   }
   :global(.code-block) {
+    position: relative;
     margin: 0.6rem 0;
     padding: 0.75rem 0.9rem;
     border-radius: 8px;
@@ -278,6 +362,22 @@
     overflow-x: auto;
     font-size: 0.85rem;
     line-height: 1.45;
+  }
+  :global(.copy-code) {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.45rem;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--surface-2);
+    color: var(--muted);
+    padding: 0.2rem 0.4rem;
+    font: inherit;
+    font-size: 0.67rem;
+    cursor: pointer;
+  }
+  :global(.copy-code:hover) {
+    color: var(--text);
   }
   :global(.inline-code) {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

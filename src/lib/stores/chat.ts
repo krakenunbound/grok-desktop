@@ -528,14 +528,18 @@ export async function ensureSession(model: string, yolo: boolean, cwd: string): 
   activeSessionKey = key;
 }
 
-export async function sendUserMessage(prompt: string, cwd: string): Promise<void> {
+export async function sendUserMessage(
+  prompt: string,
+  cwd: string,
+  attachmentPathsOverride?: string[],
+): Promise<void> {
   // Local reveal intent — no agent round-trip required.
   if (maybeHandleRevealRequest(prompt)) {
     return;
   }
 
-  const attachments = get(pendingAttachments);
-  const attachmentPaths = attachments.map((attachment) => attachment.path);
+  const attachmentPaths =
+    attachmentPathsOverride ?? get(pendingAttachments).map((attachment) => attachment.path);
   const model = get(selectedModel);
   const yolo = get(yoloEnabled);
 
@@ -651,7 +655,7 @@ export async function sendUserMessage(prompt: string, cwd: string): Promise<void
       prompt,
       attachmentPaths,
     });
-    pendingAttachments.set([]);
+    if (!attachmentPathsOverride) pendingAttachments.set([]);
   } catch (e) {
     isRunning.set(false);
     runningSince.set(null);

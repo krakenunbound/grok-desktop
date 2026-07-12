@@ -22,6 +22,7 @@ commands.allow = [
   "load_chat",
   "save_chat",
   "delete_chat",
+  "export_chat_markdown",
   "new_chat",
   "append_chat_message",
   "start_grok_session",

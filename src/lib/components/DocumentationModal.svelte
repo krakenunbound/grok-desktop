@@ -55,7 +55,8 @@
         <ul>
           <li><strong>Pinned Projects</strong> keeps important folders at the top.</li>
           <li><strong>Recent Projects</strong> tracks folders opened from the sidebar.</li>
-          <li>Project actions are visible on each row: Pin, Archive, Notes, and Delete.</li>
+          <li>Use a project's three-dot menu for Pin, Archive, Notes, and Delete.</li>
+          <li>Press <strong>Ctrl+K</strong> to search projects and chats together.</li>
           <li>
             Switching projects changes the Grok working directory and loads that folder's chat list.
           </li>
@@ -70,6 +71,10 @@
             messages keep rich previews.
           </li>
           <li>Attachments are copied into managed app storage before Grok receives their paths.</li>
+          <li>
+            Use a chat's three-dot menu to export it as Markdown. Hover or focus a message to copy
+            it or retry a prior user prompt; fenced code blocks have their own Copy button.
+          </li>
           <li>
             Ask for <strong>show raw output</strong> when you need the full agent/tool stream.
           </li>

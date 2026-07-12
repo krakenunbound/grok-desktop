@@ -204,6 +204,12 @@ pub fn delete_chat(chat_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn export_chat_markdown(chat_id: String, destination: String) -> Result<(), String> {
+    config::validate_id(&chat_id, "chat")?;
+    config::export_chat_markdown(&chat_id, &destination)
+}
+
+#[tauri::command]
 pub fn new_chat(project_id: Option<String>, title: Option<String>) -> Result<ChatSession, String> {
     config::new_chat(project_id, title)
 }

@@ -116,10 +116,12 @@ npm run build
 | Usage              | Allocation remaining, reset time, prepaid credits, and on-demand spend from Grok CLI billing telemetry                            |
 | Projects           | Folder picker + pin/recent; session cwd follows project                                                                           |
 | History            | Per-chat JSON under app data; last chat restored on launch                                                                        |
+| Search             | Filter projects and chats from one sidebar field; `Ctrl+K` focuses it                                                             |
+| Transcript tools   | Export any chat as Markdown; copy answers or code blocks; retry prior user messages                                               |
 | CLI Context        | Context panel shows Grok CLI capabilities, recent CLI sessions, tracked worktrees, MCP servers, and plugins                       |
 | Tray               | Show/hide, New Chat, Toggle YOLO, Quit                                                                                            |
 | Documentation      | In-app Docs modal with quick start, troubleshooting, and roadmap notes                                                            |
-| Shortcuts          | `Ctrl+N` new chat · `Ctrl+Shift+Y` YOLO · `Ctrl+Shift+V` Verbose · `Ctrl+,` settings · `F1` docs                                  |
+| Shortcuts          | `Ctrl+K` search · `Ctrl+N` new chat · `Ctrl+Shift+Y` YOLO · `Ctrl+Shift+V` Verbose · `Ctrl+,` settings · `F1` docs                |
 
 Browser-capable MCP servers such as Playwright can be detected and shown when Grok reports them, but Grok Desktop does not yet include an embedded browser panel or first-class browser automation UI.
 
@@ -166,9 +168,8 @@ Browser-capable MCP servers such as Playwright can be detected and shown when Gr
 2. **Stop on non-Windows platforms** currently targets the main `grok` process. Windows builds contain each turn in a kill-on-close Job Object so child tools are terminated with it.
 3. **Headless mode** (`-p`) is not a full interactive TUI — no live ACP framing for plan mode widgets yet.
 4. **Theme** is dark-only (setting reserved for later).
-5. **Chat delete** is available as a backend command; sidebar UI for bulk delete is not wired yet.
-6. **Browser automation UI** is not implemented yet. Browser/Playwright MCPs may be visible in Context, but there is no embedded browser surface.
-7. Tray may be unavailable in headless/CI environments — the main window still works.
+5. **Browser automation UI** is not implemented yet. Browser/Playwright MCPs may be visible in Context, but there is no embedded browser surface.
+6. Tray may be unavailable in headless/CI environments — the main window still works.
 
 ---
 

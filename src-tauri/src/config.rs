@@ -431,6 +431,58 @@ pub fn delete_chat(chat_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn export_chat_markdown(chat_id: &str, destination: &str) -> Result<(), String> {
+    let session = load_chat(chat_id)?;
+    if destination.trim().is_empty() || destination.len() > 4096 || destination.contains('\0') {
+        return Err("Invalid export path".into());
+    }
+    let path = PathBuf::from(destination);
+    if path.extension().and_then(|value| value.to_str()) != Some("md") {
+        return Err("Chat exports must use a .md extension".into());
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Export path has no parent directory".to_string())?;
+    if !parent.is_dir() {
+        return Err("Export destination directory does not exist".into());
+    }
+
+    write_text_atomic(&path, &chat_markdown(&session))
+}
+
+fn chat_markdown(session: &ChatSession) -> String {
+    let mut markdown = format!(
+        "# {}\n\n- Created: {}\n- Updated: {}\n\n",
+        session.title.replace(['\r', '\n'], " "),
+        session.created_at.to_rfc3339(),
+        session.updated_at.to_rfc3339()
+    );
+    for message in &session.messages {
+        let role = match message.role.as_str() {
+            "user" => "You",
+            "assistant" => "Grok",
+            _ => "System",
+        };
+        markdown.push_str(&format!("## {role}\n\n"));
+        if !message.content.is_empty() {
+            markdown.push_str(&message.content);
+            markdown.push_str("\n\n");
+        }
+        if !message.images.is_empty() {
+            markdown.push_str("Attachments:\n\n");
+            for attachment in &message.images {
+                let name = Path::new(attachment)
+                    .file_name()
+                    .map(|value| value.to_string_lossy())
+                    .unwrap_or_else(|| "attachment".into());
+                markdown.push_str(&format!("- `{name}`\n"));
+            }
+            markdown.push('\n');
+        }
+    }
+    markdown
+}
+
 /// Lightweight list row — avoids deserializing full message bodies.
 #[derive(Debug, Deserialize)]
 struct ChatListMeta {
@@ -524,6 +576,24 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), String>
     Ok(())
 }
 
+fn write_text_atomic(path: &Path, value: &str) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Invalid path (no parent)".to_string())?;
+    let tmp = parent.join(format!(
+        ".{}.{}.tmp",
+        path.file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("export"),
+        Uuid::new_v4()
+    ));
+    fs::write(&tmp, value).map_err(|error| format!("write export: {error}"))?;
+    replace_file(&tmp, path).map_err(|error| {
+        let _ = fs::remove_file(&tmp);
+        format!("replace export: {error}")
+    })
+}
+
 #[cfg(not(windows))]
 fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
     fs::rename(source, destination)
@@ -567,7 +637,8 @@ pub fn default_models() -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::write_json_atomic;
+    use super::{chat_markdown, write_json_atomic, ChatMessage, ChatSession};
+    use chrono::{TimeZone, Utc};
     use serde_json::json;
     use std::fs;
     use uuid::Uuid;
@@ -587,5 +658,31 @@ mod tests {
         assert_eq!(fs::read_dir(&dir).expect("read temp dir").count(), 1);
 
         fs::remove_dir_all(dir).expect("remove temp dir");
+    }
+
+    #[test]
+    fn markdown_export_preserves_messages_and_safe_attachment_names() {
+        let now = Utc.with_ymd_and_hms(2026, 7, 12, 10, 30, 0).unwrap();
+        let session = ChatSession {
+            id: Uuid::new_v4().to_string(),
+            project_id: None,
+            title: "Export\nDemo".into(),
+            created_at: now,
+            updated_at: now,
+            messages: vec![ChatMessage {
+                id: Uuid::new_v4().to_string(),
+                role: "user".into(),
+                content: "Please review this.".into(),
+                images: vec![r"C:\managed\report.md".into()],
+                timestamp: now,
+                status: None,
+            }],
+        };
+
+        let markdown = chat_markdown(&session);
+        assert!(markdown.starts_with("# Export Demo\n"));
+        assert!(markdown.contains("## You\n\nPlease review this."));
+        assert!(markdown.contains("- `report.md`"));
+        assert!(!markdown.contains(r"C:\managed"));
     }
 }

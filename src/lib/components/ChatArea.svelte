@@ -11,6 +11,7 @@
     sendUserMessage,
     stopGeneration,
     status,
+    type ChatMessage,
   } from "$lib/stores/chat";
   import { activeProject } from "$lib/stores/projects";
 
@@ -73,6 +74,11 @@
       void onSubmit(e);
     }
   }
+
+  function retryMessage(message: ChatMessage) {
+    const cwd = $activeProject?.path ?? ".";
+    void sendUserMessage(message.content, cwd, message.images ?? []);
+  }
 </script>
 
 <section class="chat">
@@ -94,7 +100,7 @@
       </div>
     {:else}
       {#each $currentChat.messages as msg (msg.id)}
-        <Message message={msg} />
+        <Message message={msg} onretry={() => retryMessage(msg)} />
       {/each}
     {/if}
   </div>

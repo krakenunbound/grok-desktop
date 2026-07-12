@@ -243,6 +243,7 @@ pub fn run() {
             commands::load_chat,
             commands::save_chat,
             commands::delete_chat,
+            commands::export_chat_markdown,
             commands::new_chat,
             commands::append_chat_message,
             commands::start_grok_session,
