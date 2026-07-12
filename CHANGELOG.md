@@ -2,6 +2,13 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## 0.3.1 - 2026-07-12
+
+### Changed
+
+- Rebranded the executable, window, tray, shortcuts, and installer with the Kraken theme icon.
+- Made the Windows NSIS installer create Start Menu and desktop shortcuts during installation.
+
 ## 0.3.0 - 2026-07-12
 
 ### Added

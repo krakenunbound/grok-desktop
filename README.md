@@ -2,7 +2,7 @@
 
 Lightweight desktop GUI for the **Grok Build** CLI — Codex-inspired dark UI, YOLO mode, project switching, image drop/paste, system tray, chat history, and Grok CLI context visibility.
 
-**Current version:** 0.3.0
+**Current version:** 0.3.1
 **Stack:** Tauri 2 (Rust) + Svelte 5 (SvelteKit SPA)  
 **Platform:** Windows 10/11 primary (macOS/Linux later)
 
@@ -70,6 +70,8 @@ npm run tauri:build
 ```
 
 Artifacts: `src-tauri/target/release/bundle/` (MSI / NSIS as configured).
+
+For the normal Windows experience, run the NSIS `Grok Desktop_*_x64-setup.exe` package. It installs for the current user, creates Start Menu and desktop shortcuts, and uses the Kraken icon for the app, taskbar, tray, installer, and shortcuts.
 
 Or double-click `Grok-Desktop.bat` after a release binary exists.
 
