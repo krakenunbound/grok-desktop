@@ -10,7 +10,7 @@ Lightweight desktop GUI for the **Grok Build** CLI — Codex-inspired dark UI, p
 
 ## Screenshots
 
-![Grok Desktop main window](docs/screenshots/main-window.png)
+![Grok Desktop main window](docs/screenshots/main-window-v0.4.0.png)
 
 More screenshots: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)
 
