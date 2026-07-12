@@ -83,6 +83,19 @@ let uiFlushTimer: ReturnType<typeof setTimeout> | null = null;
 let uiFlushPending = false;
 let activeSessionKey: string | null = null;
 
+async function invokeWithRetry<T>(command: string, args: Record<string, unknown>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await invoke<T>(command, args);
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 75 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 function uid(): string {
   return crypto.randomUUID?.() ?? `m_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
@@ -339,14 +352,14 @@ export async function bindGrokEvents(): Promise<void> {
           if (last?.role === "assistant" && last.streaming) {
             let finalContent: string;
             if (ev.payload.cancelled) {
-              finalContent = "_Cancelled._";
+              finalContent = "Cancelled.";
             } else if (!ev.payload.success && !buffer) {
-              finalContent = `_Grok exited with code ${ev.payload.exit_code}._`;
+              finalContent = `Grok exited with code ${ev.payload.exit_code}.`;
             } else if (verbose) {
               finalContent = buffer || last.content;
             } else {
               // Hidden: product-facing reply; raw kept for reveal.
-              finalContent = extractFinalReply(buffer) || last.content || "_No response._";
+              finalContent = extractFinalReply(buffer) || last.content || "No response.";
             }
 
             msgs[msgs.length - 1] = {
@@ -370,8 +383,9 @@ export async function bindGrokEvents(): Promise<void> {
           if (last?.role === "assistant" && !last.streaming) {
             try {
               // Persist product content; raw is session-local for now (JSON shape may omit extra fields).
-              await invoke("append_chat_message", {
+              await invokeWithRetry("append_chat_message", {
                 chatId: chat.id,
+                messageId: last.id,
                 role: "assistant",
                 content: last.content,
                 images: [],
@@ -379,6 +393,9 @@ export async function bindGrokEvents(): Promise<void> {
               });
             } catch (e) {
               debugWarn("persist assistant", e);
+              showError(
+                `The response is visible but could not be saved to chat history. ${humanizeError(e)}`,
+              );
             }
           }
         }
@@ -428,6 +445,15 @@ async function haltActiveTurn(): Promise<void> {
   isRunning.set(false);
   runningSince.set(null);
   streamBuffer.set("");
+  await discardPendingImages();
+}
+
+async function discardPendingImages(): Promise<void> {
+  const images = get(pendingImages);
+  pendingImages.set([]);
+  await Promise.allSettled(
+    images.map((image) => invoke("discard_temp_image", { path: image.path })),
+  );
 }
 
 export async function createNewChat(projectId: string | null): Promise<ChatSession> {
@@ -576,8 +602,9 @@ export async function sendUserMessage(prompt: string, cwd: string): Promise<void
   }));
 
   try {
-    const updated = await invoke<ChatSession>("append_chat_message", {
+    const updated = await invokeWithRetry<ChatSession>("append_chat_message", {
       chatId: chat.id,
+      messageId: userMsg.id,
       role: "user",
       content: prompt,
       images: imagePaths,
@@ -594,7 +621,26 @@ export async function sendUserMessage(prompt: string, cwd: string): Promise<void
     });
     void refreshChatList(chat.project_id);
   } catch (e) {
-    debugWarn("persist user", e);
+    isRunning.set(false);
+    runningSince.set(null);
+    const message = `Could not save this message. Nothing was sent to Grok. ${humanizeError(e)}`;
+    showError(message);
+    currentChat.update((c) => {
+      if (!c) return c;
+      const messages = [...c.messages];
+      const last = messages[messages.length - 1];
+      if (last?.role === "assistant" && last.streaming) {
+        messages[messages.length - 1] = {
+          ...last,
+          content: "Message was not sent because chat history could not be saved.",
+          streaming: false,
+          phaseLabel: undefined,
+          status: "error",
+        };
+      }
+      return { ...c, messages };
+    });
+    return;
   }
 
   try {
@@ -660,5 +706,11 @@ export function addPendingImage(img: PendingImage) {
 }
 
 export function removePendingImage(id: string) {
+  const image = get(pendingImages).find((item) => item.id === id);
   pendingImages.update((list) => list.filter((x) => x.id !== id));
+  if (image) {
+    void invoke("discard_temp_image", { path: image.path }).catch((e) =>
+      debugWarn("discard pending image", e),
+    );
+  }
 }

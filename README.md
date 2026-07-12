@@ -161,8 +161,8 @@ Browser-capable MCP servers such as Playwright can be detected and shown when Gr
 
 ## Known limitations
 
-1. **Multi-turn continuity** uses CLI `--continue` for the live session. After restart, the UI restores history but the CLI may start a fresh agent context unless you continue the same cwd session.
-2. **Stop** kills the main `grok` process; long-running child tools may outlive Stop on Windows (no process-tree job object yet).
+1. **Legacy chat continuity:** chats first used before v0.2.0's deterministic session mapping retain their UI history, but their earlier anonymous CLI context cannot be recovered automatically. New turns use the chat UUID as the Grok session ID and resume it deterministically.
+2. **Stop on non-Windows platforms** currently targets the main `grok` process. Windows builds contain each turn in a kill-on-close Job Object so child tools are terminated with it.
 3. **Headless mode** (`-p`) is not a full interactive TUI — no live ACP framing for plan mode widgets yet.
 4. **Theme** is dark-only (setting reserved for later).
 5. **Chat delete** is available as a backend command; sidebar UI for bulk delete is not wired yet.

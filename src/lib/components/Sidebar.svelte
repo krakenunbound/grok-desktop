@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import {
     pinnedProjects,
     recentProjects,
@@ -34,11 +35,19 @@
   let { collapsed, ontoggle }: Props = $props();
 
   let expandedNotes = $state<Record<string, boolean>>({});
+  let openProjectMenu = $state<string | null>(null);
+  let openChatMenu = $state<string | null>(null);
+  let now = $state(Date.now());
+
+  onMount(() => {
+    const timer = window.setInterval(() => (now = Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  });
 
   function relativeTime(value: string | null): string {
     if (!value) return "never";
     const then = new Date(value).getTime();
-    const diff = Math.max(0, Date.now() - then);
+    const diff = Math.max(0, now - then);
     const minute = 60_000;
     const hour = 60 * minute;
     const day = 24 * hour;
@@ -46,14 +55,41 @@
     if (diff < minute) return "now";
     if (diff < hour) return `${Math.floor(diff / minute)}m ago`;
     if (diff < day) return `${Math.floor(diff / hour)}h ago`;
-    if (diff < month) return `${Math.floor(diff / day)}d ago`;
-    return `${Math.floor(diff / month)}mo ago`;
+    if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
+    if (diff < month) return `${Math.floor(diff / (7 * day))}w ago`;
+    if (diff < 12 * month) return `${Math.floor(diff / month)}mo ago`;
+    return `${Math.floor(diff / (12 * month))}y ago`;
+  }
+
+  function toggleProjectMenu(id: string, event: MouseEvent) {
+    event.stopPropagation();
+    openChatMenu = null;
+    openProjectMenu = openProjectMenu === id ? null : id;
+  }
+
+  function toggleChatMenu(id: string, event: MouseEvent) {
+    event.stopPropagation();
+    openProjectMenu = null;
+    openChatMenu = openChatMenu === id ? null : id;
+  }
+
+  async function onPinProject(project: Project, pinned: boolean) {
+    openProjectMenu = null;
+    try {
+      await setPinned(project.id, pinned);
+    } catch (e) {
+      showError(e);
+    }
   }
 
   async function onNewChat() {
-    const pid = $activeProjectId;
-    const chat = await createNewChat(pid);
-    if (pid) await touchProject(pid, chat.id);
+    try {
+      const pid = $activeProjectId;
+      const chat = await createNewChat(pid);
+      if (pid) await touchProject(pid, chat.id);
+    } catch (e) {
+      showError(e);
+    }
   }
 
   async function onAddProject() {
@@ -91,12 +127,28 @@
   }
 
   async function selectChat(id: string) {
-    await openChat(id);
-    const projectId = $currentChat?.project_id ?? null;
-    if (projectId) await touchProject(projectId, id);
+    try {
+      await openChat(id);
+      const projectId = $currentChat?.project_id ?? null;
+      if (projectId) await touchProject(projectId, id);
+    } catch (e) {
+      showError(e);
+    }
+  }
+
+  async function switchToWorkspaceChat() {
+    activeProjectId.set(null);
+    await refreshChatList(null);
+    const next = $chatList[0];
+    if (next) {
+      await openChat(next.id);
+    } else {
+      await createNewChat(null);
+    }
   }
 
   function toggleNotes(id: string) {
+    openProjectMenu = null;
     expandedNotes = { ...expandedNotes, [id]: !expandedNotes[id] };
   }
 
@@ -106,7 +158,9 @@
     );
     if (!ok) return;
     try {
+      const wasActive = $activeProjectId === project.id;
       await removeProject(project.id);
+      if (wasActive) await switchToWorkspaceChat();
     } catch (e) {
       showError(e);
     }
@@ -114,13 +168,16 @@
 
   async function onArchiveProject(project: Project) {
     try {
+      const wasActive = $activeProjectId === project.id;
       await setArchived(project.id, !project.archived);
+      if (wasActive && !project.archived) await switchToWorkspaceChat();
     } catch (e) {
       showError(e);
     }
   }
 
   async function onDeleteChat(id: string, title: string) {
+    openChatMenu = null;
     const ok = window.confirm(`Delete chat "${title || "Untitled"}"?`);
     if (!ok) return;
     await deleteChat(id);
@@ -129,10 +186,27 @@
   async function saveNotes(project: Project, event: Event) {
     const notes = (event.currentTarget as HTMLTextAreaElement).value;
     if (notes !== project.notes) {
-      await updateProjectNotes(project.id, notes);
+      try {
+        await updateProjectNotes(project.id, notes);
+      } catch (e) {
+        showError(e);
+      }
     }
   }
 </script>
+
+<svelte:window
+  onclick={() => {
+    openProjectMenu = null;
+    openChatMenu = null;
+  }}
+  onkeydown={(event) => {
+    if (event.key === "Escape") {
+      openProjectMenu = null;
+      openChatMenu = null;
+    }
+  }}
+/>
 
 <aside class="sidebar" class:collapsed>
   <div class="head">
@@ -179,23 +253,36 @@
               title={p.path}
             >
               <span class="project-name">{p.name}</span>
-              <span class="project-meta">
-                <span>{p.project_type}</span>
-                <span>Last worked {relativeTime(p.last_opened)}</span>
-              </span>
+              <span class="project-meta">{p.project_type}</span>
             </button>
-            <div class="project-actions" aria-label={`${p.name} actions`}>
-              <button type="button" onclick={() => setPinned(p.id, false)}>Unpin</button>
-              <button type="button" onclick={() => onArchiveProject(p)}>
-                {p.archived ? "Unarchive" : "Archive"}
-              </button>
-              <button type="button" onclick={() => toggleNotes(p.id)}>
-                {expandedNotes[p.id] ? "Hide notes" : "Notes"}
-              </button>
-              <button type="button" class="danger" onclick={() => onRemoveProject(p)}>
-                Delete
-              </button>
-            </div>
+            <time class="project-age" datetime={p.last_opened}>{relativeTime(p.last_opened)}</time>
+            <button
+              type="button"
+              class="project-more"
+              aria-label={`More actions for ${p.name}`}
+              aria-haspopup="menu"
+              aria-expanded={openProjectMenu === p.id}
+              onclick={(event) => toggleProjectMenu(p.id, event)}>•••</button
+            >
+            {#if openProjectMenu === p.id}
+              <div class="project-menu" role="menu" aria-label={`${p.name} actions`}>
+                <button type="button" role="menuitem" onclick={() => onPinProject(p, false)}>
+                  Unpin
+                </button>
+                <button type="button" role="menuitem" onclick={() => onArchiveProject(p)}>
+                  {p.archived ? "Unarchive" : "Archive"}
+                </button>
+                <button type="button" role="menuitem" onclick={() => toggleNotes(p.id)}>
+                  {expandedNotes[p.id] ? "Hide notes" : "Notes"}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="danger"
+                  onclick={() => onRemoveProject(p)}>Remove from sidebar</button
+                >
+              </div>
+            {/if}
           </div>
           {#if expandedNotes[p.id]}
             <textarea
@@ -223,23 +310,36 @@
             title={p.path}
           >
             <span class="project-name">{p.name}</span>
-            <span class="project-meta">
-              <span>{p.archived ? "Archived" : p.project_type}</span>
-              <span>Last worked {relativeTime(p.last_opened)}</span>
-            </span>
+            <span class="project-meta">{p.archived ? "Archived" : p.project_type}</span>
           </button>
-          <div class="project-actions" aria-label={`${p.name} actions`}>
-            <button type="button" onclick={() => setPinned(p.id, true)}>Pin</button>
-            <button type="button" onclick={() => onArchiveProject(p)}>
-              {p.archived ? "Unarchive" : "Archive"}
-            </button>
-            <button type="button" onclick={() => toggleNotes(p.id)}>
-              {expandedNotes[p.id] ? "Hide notes" : "Notes"}
-            </button>
-            <button type="button" class="danger" onclick={() => onRemoveProject(p)}>
-              Delete
-            </button>
-          </div>
+          <time class="project-age" datetime={p.last_opened}>{relativeTime(p.last_opened)}</time>
+          <button
+            type="button"
+            class="project-more"
+            aria-label={`More actions for ${p.name}`}
+            aria-haspopup="menu"
+            aria-expanded={openProjectMenu === p.id}
+            onclick={(event) => toggleProjectMenu(p.id, event)}>•••</button
+          >
+          {#if openProjectMenu === p.id}
+            <div class="project-menu" role="menu" aria-label={`${p.name} actions`}>
+              <button type="button" role="menuitem" onclick={() => onPinProject(p, true)}>
+                Pin
+              </button>
+              <button type="button" role="menuitem" onclick={() => onArchiveProject(p)}>
+                {p.archived ? "Unarchive" : "Archive"}
+              </button>
+              <button type="button" role="menuitem" onclick={() => toggleNotes(p.id)}>
+                {expandedNotes[p.id] ? "Hide notes" : "Notes"}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                class="danger"
+                onclick={() => onRemoveProject(p)}>Remove from sidebar</button
+              >
+            </div>
+          {/if}
         </div>
         {#if expandedNotes[p.id]}
           <textarea
@@ -259,16 +359,28 @@
         <div class="chat-row" class:active={$currentChat?.id === c.id}>
           <button type="button" class="chat" onclick={() => selectChat(c.id)}>
             <span>{c.title || "Untitled"}</span>
-            <small>{relativeTime(c.updated_at)}</small>
           </button>
+          <time class="chat-age" datetime={c.updated_at}>{relativeTime(c.updated_at)}</time>
           <button
             type="button"
-            class="chat-delete"
-            title="Delete chat"
-            onclick={() => onDeleteChat(c.id, c.title)}
+            class="chat-more"
+            aria-label={`More actions for ${c.title || "Untitled"}`}
+            aria-haspopup="menu"
+            aria-expanded={openChatMenu === c.id}
+            onclick={(event) => toggleChatMenu(c.id, event)}
           >
-            Delete
+            •••
           </button>
+          {#if openChatMenu === c.id}
+            <div class="chat-menu" role="menu" aria-label={`${c.title || "Untitled"} actions`}>
+              <button
+                type="button"
+                role="menuitem"
+                class="danger"
+                onclick={() => onDeleteChat(c.id, c.title)}>Delete chat</button
+              >
+            </div>
+          {/if}
         </div>
       {:else}
         <div class="empty-hint">No chats for this project.</div>
@@ -404,7 +516,9 @@
   }
   .project-row {
     display: grid;
-    gap: 0.15rem;
+    grid-template-columns: minmax(0, 1fr) auto 30px;
+    align-items: center;
+    gap: 0.25rem;
     border-radius: 8px;
     padding: 0.2rem;
   }
@@ -432,48 +546,73 @@
   }
   .project-name,
   .chat span {
+    display: block;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 0.86rem;
   }
   .project-meta {
-    display: flex;
-    gap: 0.45rem;
     color: var(--muted);
     font-size: 0.7rem;
-    min-width: 0;
-  }
-  .project-meta span {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .project-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-    padding: 0 0.3rem 0.25rem;
+  .project-age {
+    color: var(--muted);
+    font-size: 0.68rem;
+    white-space: nowrap;
+    text-align: right;
   }
-  .project-actions button,
-  .chat-delete {
-    border: 1px solid var(--border);
+  .project-more {
+    width: 30px;
+    height: 28px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+  .project-more:hover,
+  .project-more[aria-expanded="true"] {
+    color: var(--text);
     background: var(--surface);
+  }
+  .project-menu {
+    grid-column: 1 / -1;
+    justify-self: end;
+    width: min(180px, calc(100% - 0.5rem));
+    display: grid;
+    padding: 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+    z-index: 4;
+  }
+  .project-menu button {
+    border: none;
+    background: transparent;
     color: var(--text);
     border-radius: 6px;
-    padding: 0.22rem 0.42rem;
+    padding: 0.48rem 0.55rem;
     font: inherit;
-    font-size: 0.68rem;
+    font-size: 0.76rem;
     cursor: pointer;
+    text-align: left;
   }
-  .project-actions button:hover,
-  .chat-delete:hover {
+  .project-menu button:hover,
+  .project-menu button:focus-visible {
     background: var(--surface-2);
+    outline: none;
   }
-  .project-actions .danger,
-  .chat-delete {
+  .project-menu .danger {
     color: #ffb3b3;
-    border-color: rgba(255, 92, 92, 0.38);
   }
   .notes {
     width: calc(100% - 0.5rem);
@@ -489,7 +628,7 @@
   }
   .chat-row {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto 30px;
     align-items: center;
     gap: 0.3rem;
     border-radius: 8px;
@@ -506,12 +645,57 @@
     border-radius: 8px;
     padding: 0.42rem 0.5rem;
     cursor: pointer;
-    display: grid;
-    gap: 0.1rem;
     text-align: left;
   }
-  .chat small {
+  .chat-age {
     color: var(--muted);
-    font-size: 0.7rem;
+    font-size: 0.68rem;
+    white-space: nowrap;
+    text-align: right;
+  }
+  .chat-more {
+    width: 30px;
+    height: 28px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+  .chat-more:hover,
+  .chat-more[aria-expanded="true"] {
+    color: var(--text);
+    background: var(--surface);
+  }
+  .chat-menu {
+    grid-column: 1 / -1;
+    justify-self: end;
+    width: min(160px, calc(100% - 0.5rem));
+    display: grid;
+    padding: 0.3rem;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--surface);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+    z-index: 4;
+  }
+  .chat-menu button {
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    padding: 0.48rem 0.55rem;
+    color: #ffb3b3;
+    font: inherit;
+    font-size: 0.76rem;
+    cursor: pointer;
+    text-align: left;
+  }
+  .chat-menu button:hover,
+  .chat-menu button:focus-visible {
+    background: var(--surface-2);
+    outline: none;
   }
 </style>

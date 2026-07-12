@@ -1157,6 +1157,7 @@ dependencies = [
  "toml_edit 0.25.12+spec-1.1.0",
  "uuid",
  "which",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

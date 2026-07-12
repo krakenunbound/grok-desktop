@@ -33,6 +33,7 @@ commands.allow = [
   "is_session_running",
   "save_image_base64",
   "import_image_path",
+  "discard_temp_image",
   "get_status",
   "resolve_grok_binary",
   "report_ui_ready",

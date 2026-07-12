@@ -134,6 +134,23 @@ pub fn import_image_path(settings: &AppSettings, source_path: &str) -> Result<Sa
     })
 }
 
+/// Delete an unsent attachment, restricted to the managed temp image directory.
+pub fn discard_temp_image(settings: &AppSettings, image_path: &str) -> Result<(), String> {
+    if image_path.trim().is_empty() || image_path.len() > 4096 || image_path.contains('\0') {
+        return Err("Invalid image path".into());
+    }
+    let root = config::temp_images_dir(settings)?
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve temp image directory: {e}"))?;
+    let path = PathBuf::from(image_path)
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve image path: {e}"))?;
+    if !path.starts_with(&root) || !path.is_file() {
+        return Err("Image is not a managed temporary file".into());
+    }
+    fs::remove_file(path).map_err(|e| format!("Failed to discard image: {e}"))
+}
+
 fn parse_payload(data: &str, mime_hint: Option<String>) -> Result<(String, String), String> {
     let trimmed = data.trim();
     if let Some(rest) = trimmed.strip_prefix("data:") {

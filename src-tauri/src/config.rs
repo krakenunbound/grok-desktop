@@ -226,23 +226,32 @@ pub fn save_projects(store: &ProjectStore) -> Result<(), String> {
 }
 
 pub fn add_or_update_project(path: &str, name: Option<String>) -> Result<Project, String> {
-    let path_buf = PathBuf::from(path);
-    if !path_buf.is_dir() {
+    let requested_path = PathBuf::from(path);
+    if !requested_path.is_dir() {
         return Err(format!("Not a directory: {path}"));
     }
+    let path_buf = requested_path
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve project directory: {e}"))?;
+    let path = path_buf.to_string_lossy().to_string();
     let display_name = name.unwrap_or_else(|| {
         path_buf
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| path.to_string())
+            .unwrap_or_else(|| path.clone())
     });
 
     let mut store = load_projects();
     let project_type = detect_project_type(&path_buf);
     let last_modified = folder_modified_at(&path_buf);
-    if let Some(existing) = store.projects.iter_mut().find(|p| p.path == path) {
+    if let Some(existing) = store
+        .projects
+        .iter_mut()
+        .find(|p| paths_equal(&p.path, &path))
+    {
         existing.last_opened = Utc::now();
         existing.name = display_name;
+        existing.path = path.clone();
         existing.archived = false;
         existing.project_type = project_type;
         existing.last_modified = last_modified;
@@ -254,7 +263,7 @@ pub fn add_or_update_project(path: &str, name: Option<String>) -> Result<Project
     let project = Project {
         id: Uuid::new_v4().to_string(),
         name: display_name,
-        path: path.to_string(),
+        path,
         pinned: false,
         archived: false,
         notes: String::new(),
@@ -266,6 +275,18 @@ pub fn add_or_update_project(path: &str, name: Option<String>) -> Result<Project
     store.projects.push(project.clone());
     save_projects(&store)?;
     Ok(project)
+}
+
+pub fn paths_equal(left: &str, right: &str) -> bool {
+    #[cfg(windows)]
+    {
+        left.replace('/', "\\")
+            .eq_ignore_ascii_case(&right.replace('/', "\\"))
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
 }
 
 pub fn set_project_pinned(id: &str, pinned: bool) -> Result<ProjectStore, String> {
@@ -495,20 +516,76 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), String>
     let raw = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
     fs::write(&tmp, raw).map_err(|e| e.to_string())?;
 
-    // Windows cannot rename over an existing file — remove destination first.
-    // Brief window is acceptable for local config/chat JSON.
-    if path.exists() {
-        fs::remove_file(path).map_err(|e| format!("replace existing file: {e}"))?;
-    }
-    fs::rename(&tmp, path).map_err(|e| {
+    replace_file(&tmp, path).map_err(|e| {
         // Best-effort cleanup of temp on failure.
         let _ = fs::remove_file(&tmp);
-        format!("rename temp to target: {e}")
+        format!("replace target with temp: {e}")
     })?;
     Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    fs::rename(source, destination)
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let source: Vec<u16> = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let moved = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 
 /// Known Grok model IDs for the UI selector (backend may accept any string).
 pub fn default_models() -> Vec<&'static str> {
     vec!["grok-4.5", "grok-4", "grok-3", "grok-3-mini", "grok-2"]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::write_json_atomic;
+    use serde_json::json;
+    use std::fs;
+    use uuid::Uuid;
+
+    #[test]
+    fn atomic_json_write_creates_and_replaces() {
+        let dir = std::env::temp_dir().join(format!("grok-desktop-test-{}", Uuid::new_v4()));
+        let path = dir.join("state.json");
+
+        write_json_atomic(&path, &json!({ "version": 1 })).expect("create JSON");
+        write_json_atomic(&path, &json!({ "version": 2 })).expect("replace JSON");
+
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).expect("read JSON"))
+                .expect("parse JSON");
+        assert_eq!(value, json!({ "version": 2 }));
+        assert_eq!(fs::read_dir(&dir).expect("read temp dir").count(), 1);
+
+        fs::remove_dir_all(dir).expect("remove temp dir");
+    }
 }

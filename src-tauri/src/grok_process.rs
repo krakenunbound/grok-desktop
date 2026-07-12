@@ -1,7 +1,8 @@
 //! Spawn and stream the Grok Build CLI for headless chat turns.
 //!
 //! Each user message runs:
-//!   grok -p <prompt> -m <model> --cwd <dir> [--always-approve] [--continue]
+//!   grok -p <prompt> -m <model> --cwd <dir> [--always-approve]
+//!        [--session-id <chat-id> | --resume <chat-id>]
 //!
 //! Stdout/stderr are streamed to the frontend via Tauri events.
 
@@ -41,6 +42,8 @@ pub struct GrokManager {
     pub config: Mutex<Option<SessionConfig>>,
     pub child: Mutex<Option<Child>>,
     pub cancel: Mutex<Option<Arc<AtomicBool>>>,
+    /// Windows Job Object handle. Closing it terminates the entire tool tree.
+    pub job: Mutex<Option<isize>>,
 }
 
 impl GrokManager {
@@ -49,9 +52,80 @@ impl GrokManager {
             config: Mutex::new(None),
             child: Mutex::new(None),
             cancel: Mutex::new(None),
+            job: Mutex::new(None),
         }
     }
 }
+
+#[cfg(windows)]
+fn create_kill_on_close_job(process_id: u32) -> Result<isize, String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+    };
+
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job.is_null() {
+            return Err(format!(
+                "Create process containment job: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+
+        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if SetInformationJobObject(
+            job,
+            JobObjectExtendedLimitInformation,
+            &info as *const _ as *const _,
+            std::mem::size_of_val(&info) as u32,
+        ) == 0
+        {
+            let error = std::io::Error::last_os_error();
+            CloseHandle(job);
+            return Err(format!("Configure process containment job: {error}"));
+        }
+
+        let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, process_id);
+        if process.is_null() {
+            let error = std::io::Error::last_os_error();
+            CloseHandle(job);
+            return Err(format!("Open Grok process for containment: {error}"));
+        }
+        let assigned = AssignProcessToJobObject(job, process);
+        let assignment_error = std::io::Error::last_os_error();
+        CloseHandle(process);
+        if assigned == 0 {
+            CloseHandle(job);
+            return Err(format!(
+                "Assign Grok process to containment job: {assignment_error}"
+            ));
+        }
+        Ok(job as isize)
+    }
+}
+
+#[cfg(not(windows))]
+fn create_kill_on_close_job(_process_id: u32) -> Result<isize, String> {
+    Ok(0)
+}
+
+#[cfg(windows)]
+fn close_job(handle: isize) {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    unsafe {
+        CloseHandle(handle as *mut std::ffi::c_void);
+    }
+}
+
+#[cfg(not(windows))]
+fn close_job(_handle: isize) {}
 
 impl Default for GrokManager {
     fn default() -> Self {
@@ -137,6 +211,19 @@ fn push_repeated_lines(args: &mut Vec<String>, flag: &str, value: &str) {
     }
 }
 
+fn push_session_args(args: &mut Vec<String>, chat_id: Option<&str>, has_prior_turn: bool) {
+    if let Some(chat_id) = chat_id {
+        args.push(if has_prior_turn {
+            "--resume".into()
+        } else {
+            "--session-id".into()
+        });
+        args.push(chat_id.into());
+    } else if has_prior_turn {
+        args.push("--continue".into());
+    }
+}
+
 /// Map raw agent/CLI lines to high-level status labels (Agent Transparency Mode).
 /// Prefer calm product language over tool/CLI jargon.
 fn classify_status_line(line: &str) -> Option<&'static str> {
@@ -218,6 +305,11 @@ pub async fn start_session(
     }
     let cwd = cwd_path.to_string_lossy().to_string();
 
+    if let Some(ref id) = chat_id {
+        crate::config::validate_id(id, "chat")?;
+        uuid::Uuid::parse_str(id).map_err(|_| "Invalid chat id (expected UUID)".to_string())?;
+    }
+
     // Preserve multi-turn continuity when cwd + chat stay the same.
     // Only cancel an in-flight child when the working directory changes.
     let prior = manager.config.lock().await.clone();
@@ -268,6 +360,9 @@ pub async fn stop_session(manager: &GrokManager) -> Result<(), String> {
     }
     let mut child_guard = manager.child.lock().await;
     if let Some(mut child) = child_guard.take() {
+        if let Some(job) = manager.job.lock().await.take() {
+            close_job(job);
+        }
         let _ = child.kill().await;
     }
     Ok(())
@@ -326,8 +421,9 @@ pub async fn send_message(
     }
 
     // Build prompt with attached image paths for Grok Build file awareness.
-    // Note: multi-turn continuity also uses --continue after the first success
-    // for this cwd; chat history is persisted separately for UI restore.
+    // Chat history is persisted separately for UI restore. The CLI session is
+    // keyed to the chat UUID so another terminal/session in the same cwd can
+    // never steal this chat's continuation target.
     let mut full_prompt = String::new();
     if !safe_images.is_empty() {
         for path in &safe_images {
@@ -378,10 +474,7 @@ pub async fn send_message(
     push_arg_value(&mut args, "--rules", &advanced.extra_rules);
     push_repeated_lines(&mut args, "--allow", &advanced.allow_rules);
     push_repeated_lines(&mut args, "--deny", &advanced.deny_rules);
-    // Multi-turn: continue the most recent session for this cwd after first turn.
-    if cfg.has_prior_turn {
-        args.push("--continue".into());
-    }
+    push_session_args(&mut args, cfg.chat_id.as_deref(), cfg.has_prior_turn);
 
     emit_status(
         &app,
@@ -422,6 +515,17 @@ pub async fn send_message(
         .spawn()
         .map_err(|e| format!("Failed to spawn grok ({}): {e}", binary.display()))?;
 
+    let process_id = child
+        .id()
+        .ok_or_else(|| "Grok process did not expose a process id".to_string())?;
+    let job = match create_kill_on_close_job(process_id) {
+        Ok(job) => job,
+        Err(error) => {
+            let _ = child.kill().await;
+            return Err(error);
+        }
+    };
+
     let stdout = child
         .stdout
         .take()
@@ -434,6 +538,7 @@ pub async fn send_message(
     let cancel = Arc::new(AtomicBool::new(false));
     *cancel_guard = Some(cancel.clone());
     *child_guard = Some(child);
+    *manager.job.lock().await = Some(job);
     drop(child_guard);
     drop(cancel_guard);
 
@@ -521,6 +626,9 @@ pub async fn send_message(
 
     *manager.child.lock().await = None;
     *manager.cancel.lock().await = None;
+    if let Some(job) = manager.job.lock().await.take() {
+        close_job(job);
+    }
 
     let cancelled = cancel.load(Ordering::SeqCst);
     let success = !cancelled && exit_code == 0;
@@ -618,4 +726,32 @@ pub async fn current_session(manager: &GrokManager) -> Option<SessionConfig> {
 /// Whether a turn is currently running.
 pub async fn is_running(manager: &GrokManager) -> bool {
     manager.child.lock().await.is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::push_session_args;
+
+    const CHAT_ID: &str = "019f5829-8992-7622-8c5d-72e56c32e489";
+
+    #[test]
+    fn new_chat_gets_deterministic_session_id() {
+        let mut args = Vec::new();
+        push_session_args(&mut args, Some(CHAT_ID), false);
+        assert_eq!(args, ["--session-id", CHAT_ID]);
+    }
+
+    #[test]
+    fn existing_chat_resumes_its_own_session() {
+        let mut args = Vec::new();
+        push_session_args(&mut args, Some(CHAT_ID), true);
+        assert_eq!(args, ["--resume", CHAT_ID]);
+    }
+
+    #[test]
+    fn id_less_legacy_session_uses_continue() {
+        let mut args = Vec::new();
+        push_session_args(&mut args, None, true);
+        assert_eq!(args, ["--continue"]);
+    }
 }

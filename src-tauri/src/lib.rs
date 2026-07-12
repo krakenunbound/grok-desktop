@@ -253,6 +253,7 @@ pub fn run() {
             commands::is_session_running,
             commands::save_image_base64,
             commands::import_image_path,
+            commands::discard_temp_image,
             commands::get_status,
             commands::resolve_grok_binary,
             commands::report_ui_ready,

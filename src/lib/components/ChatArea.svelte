@@ -13,6 +13,7 @@
   import { activeProject } from "$lib/stores/projects";
 
   let input = $state("");
+  let inputChatId: string | null | undefined = undefined;
   let scroller: HTMLDivElement | undefined = $state();
   let now = $state(Date.now());
   let elapsed = $derived($runningSince ? formatElapsed(now - $runningSince) : "");
@@ -39,6 +40,16 @@
     queueMicrotask(() => {
       if (scroller) scroller.scrollTop = scroller.scrollHeight;
     });
+  });
+
+  $effect(() => {
+    const chatId = $currentChat?.id ?? null;
+    if (inputChatId !== undefined && inputChatId !== chatId) {
+      // Drafts are intentionally chat-scoped to prevent sending text in the
+      // wrong project after a new-chat or chat-switch action.
+      input = "";
+    }
+    inputChatId = chatId;
   });
 
   async function onSubmit(e: Event) {

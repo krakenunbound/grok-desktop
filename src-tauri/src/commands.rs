@@ -204,12 +204,15 @@ pub fn new_chat(project_id: Option<String>, title: Option<String>) -> Result<Cha
 #[tauri::command]
 pub fn append_chat_message(
     chat_id: String,
+    message_id: String,
     role: String,
     content: String,
     images: Vec<String>,
     status: Option<String>,
 ) -> Result<ChatSession, String> {
     config::validate_id(&chat_id, "chat")?;
+    config::validate_id(&message_id, "message")?;
+    Uuid::parse_str(&message_id).map_err(|_| "Invalid message id (expected UUID)".to_string())?;
     let role = role.to_lowercase();
     if !matches!(role.as_str(), "user" | "assistant" | "system") {
         return Err("Invalid message role".into());
@@ -221,12 +224,21 @@ pub fn append_chat_message(
         return Err("Too many image attachments".into());
     }
     let mut session = config::load_chat(&chat_id)?;
+    // IPC retries are safe: return the already-persisted result instead of
+    // duplicating a message whose success response was interrupted.
+    if session
+        .messages
+        .iter()
+        .any(|message| message.id == message_id)
+    {
+        return Ok(session);
+    }
     // Soft cap history growth to keep load times reasonable.
     if session.messages.len() > 2000 {
         return Err("Chat history limit reached; start a new chat".into());
     }
     session.messages.push(ChatMessage {
-        id: Uuid::new_v4().to_string(),
+        id: message_id,
         role,
         content: content.clone(),
         images,
@@ -270,7 +282,11 @@ pub async fn start_grok_session(
 
     let mut settings = settings;
     let projects = config::load_projects();
-    if let Some(p) = projects.projects.iter().find(|p| p.path == cfg.cwd) {
+    if let Some(p) = projects
+        .projects
+        .iter()
+        .find(|p| config::paths_equal(&p.path, &cfg.cwd))
+    {
         settings.last_project_id = Some(p.id.clone());
         let _ = config::save_settings(&settings);
         let _ = config::touch_project(&p.id, cfg.chat_id.clone());
@@ -335,6 +351,12 @@ pub fn save_image_base64(
 pub fn import_image_path(path: String) -> Result<SavedImage, String> {
     let settings = config::load_settings();
     image_handler::import_image_path(&settings, &path)
+}
+
+#[tauri::command]
+pub fn discard_temp_image(path: String) -> Result<(), String> {
+    let settings = config::load_settings();
+    image_handler::discard_temp_image(&settings, &path)
 }
 
 #[tauri::command]
