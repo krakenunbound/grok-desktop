@@ -4,7 +4,9 @@ Lightweight desktop GUI for the **Grok Build** CLI — Codex-inspired dark UI, p
 
 **Current version:** 0.4.0
 **Stack:** Tauri 2 (Rust) + Svelte 5 (SvelteKit SPA)  
-**Platform:** Windows 10/11 primary (macOS/Linux later)
+**Platforms:** Windows 10/11, Linux, and macOS
+
+Windows is the primary tested platform. Linux packages are built natively on Ubuntu, and macOS packages are built natively for Apple Silicon and Intel. The macOS packages are currently unsigned and unnotarized, so Gatekeeper may require manual approval.
 
 ---
 
@@ -63,15 +65,17 @@ npm run start:dev
 
 Starts Vite **and** the app together. Leave that console open.
 
-### Production installer
+### Production packages
 
 ```powershell
 npm run tauri:build
 ```
 
-Artifacts: `src-tauri/target/release/bundle/` (MSI / NSIS as configured).
+Artifacts are written under `src-tauri/target/release/bundle/`.
 
 For the normal Windows experience, run the NSIS `Grok Desktop_*_x64-setup.exe` package. It installs for the current user, creates Start Menu and desktop shortcuts, and uses the Kraken icon for the app, taskbar, tray, installer, and shortcuts.
+
+GitHub Releases also provides Linux AppImage, Debian, and RPM packages plus macOS DMG packages for Apple Silicon and Intel. Cross-platform release packages are built on native GitHub-hosted runners rather than cross-compiled from Windows.
 
 Or double-click `Grok-Desktop.bat` after a release binary exists.
 

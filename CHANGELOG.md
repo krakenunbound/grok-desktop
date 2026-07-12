@@ -9,6 +9,7 @@ All notable changes to Grok Desktop are tracked here.
 - Guided New Project flow for creating a project or using an existing folder.
 - Composer selectors for available Grok models and low, medium, or high reasoning effort.
 - Clear approval profiles for ask-before-actions, auto-approved edits, plan-only, and full access.
+- Native release packaging for Linux (AppImage, Debian, and RPM) and macOS (Apple Silicon and Intel DMG).
 
 ### Changed
 
