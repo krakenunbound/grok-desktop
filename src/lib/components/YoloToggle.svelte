@@ -20,11 +20,13 @@
   class="yolo"
   class:on={$yoloEnabled}
   onclick={toggle}
-  title={$yoloEnabled ? "YOLO on — --always-approve" : "YOLO off — confirm tools"}
+  title={$yoloEnabled
+    ? "Full access (YOLO) — tools are always approved"
+    : "Confirm access — Grok asks before protected tool actions"}
   aria-pressed={$yoloEnabled}
 >
-  <span class="dot"></span>
-  YOLO
+  <span class="shield" aria-hidden="true">◇</span>
+  {$yoloEnabled ? "Full access" : "Confirm access"}
 </button>
 
 <style>
@@ -55,15 +57,12 @@
     border-color: transparent;
     box-shadow: 0 0 0 1px var(--accent-glow);
   }
-  .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: currentColor;
-    opacity: 0.5;
+  .shield {
+    font-size: 0.9rem;
+    line-height: 1;
+    opacity: 0.75;
   }
-  .yolo.on .dot {
+  .yolo.on .shield {
     opacity: 1;
-    box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
   }
 </style>

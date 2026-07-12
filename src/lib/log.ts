@@ -41,7 +41,7 @@ export function humanizeError(err: unknown): string {
     return "Project folder is missing. Open a valid project from the sidebar.";
   }
   if (/Image path must be under/i.test(raw)) {
-    return "That image path is not allowed. Attach images with the + button or paste a screenshot.";
+    return "That attachment path is not allowed. Use the Attach button, drag a file in, or paste an image.";
   }
   if (/exceeds 20 MB/i.test(raw) || /payload too large/i.test(raw)) {
     return "Image is too large (max 20 MB). Try a smaller screenshot or compress it.";

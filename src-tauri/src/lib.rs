@@ -8,6 +8,7 @@ mod grok_process;
 mod image_handler;
 mod launch_status;
 mod tray;
+mod usage;
 
 use grok_process::GrokManager;
 use launch_status::LaunchStatus;
@@ -253,8 +254,10 @@ pub fn run() {
             commands::is_session_running,
             commands::save_image_base64,
             commands::import_image_path,
+            commands::import_attachment_path,
             commands::discard_temp_image,
             commands::get_status,
+            commands::get_usage,
             commands::resolve_grok_binary,
             commands::report_ui_ready,
             commands::report_ui_failed,

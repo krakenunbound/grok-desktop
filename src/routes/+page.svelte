@@ -3,11 +3,10 @@
   import { invoke } from "@tauri-apps/api/core";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import ChatArea from "$lib/components/ChatArea.svelte";
-  import ModelSelector from "$lib/components/ModelSelector.svelte";
-  import YoloToggle from "$lib/components/YoloToggle.svelte";
   import VerboseToggle from "$lib/components/VerboseToggle.svelte";
   import SettingsModal from "$lib/components/SettingsModal.svelte";
   import DocumentationModal from "$lib/components/DocumentationModal.svelte";
+  import UsageMeter from "$lib/components/UsageMeter.svelte";
   import RightPanel from "$lib/components/RightPanel.svelte";
   import { get } from "svelte/store";
   import {
@@ -232,8 +231,7 @@
           <h1 class="title">Grok Desktop</h1>
         </div>
         <div class="right" role="toolbar" aria-label="Session controls">
-          <ModelSelector />
-          <YoloToggle />
+          <UsageMeter />
           <VerboseToggle />
           <button
             type="button"

@@ -222,7 +222,7 @@
           />
         </label>
         <label>
-          Temp images directory
+          Attachment storage directory
           <input bind:value={draft.temp_images_dir} placeholder="App data / temp_images" />
         </label>
       </div>

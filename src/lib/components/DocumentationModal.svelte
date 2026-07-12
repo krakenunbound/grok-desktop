@@ -65,10 +65,11 @@
       <section id="chat">
         <h3>Chat and attachments</h3>
         <ul>
-          <li>Paste, drop, or attach images; sent messages show thumbnails.</li>
           <li>
-            Attached images are copied into the app temp image directory before Grok receives them.
+            Paste images or drop/select images, video, audio, documents, code, and archives;
+            messages keep rich previews.
           </li>
+          <li>Attachments are copied into managed app storage before Grok receives their paths.</li>
           <li>
             Ask for <strong>show raw output</strong> when you need the full agent/tool stream.
           </li>

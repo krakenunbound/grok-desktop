@@ -3,7 +3,6 @@
 ## Near Term
 
 - Add persistent Grok agent transport to reduce per-turn startup latency.
-- Add process-tree cleanup on Windows so Stop reliably terminates child tools.
 - Add GitHub release packaging with installer artifacts.
 - Add smoke tests around project actions, settings, image attach, and chat persistence.
 - Add import/export for app settings and chat history.

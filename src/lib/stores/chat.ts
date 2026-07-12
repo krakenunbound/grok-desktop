@@ -42,16 +42,19 @@ export interface GrokStatus {
   running: boolean;
 }
 
-export interface PendingImage {
+export interface PendingAttachment {
   id: string;
   path: string;
   filename: string;
+  mime: string;
+  kind: "image" | "video" | "audio" | "file";
+  sizeBytes: number;
   previewUrl?: string;
 }
 
 export const currentChat = writable<ChatSession | null>(null);
 export const chatList = writable<ChatSession[]>([]);
-export const pendingImages = writable<PendingImage[]>([]);
+export const pendingAttachments = writable<PendingAttachment[]>([]);
 export const isRunning = writable(false);
 export const runningSince = writable<number | null>(null);
 export const status = writable<GrokStatus>({
@@ -445,14 +448,14 @@ async function haltActiveTurn(): Promise<void> {
   isRunning.set(false);
   runningSince.set(null);
   streamBuffer.set("");
-  await discardPendingImages();
+  await discardPendingAttachments();
 }
 
-async function discardPendingImages(): Promise<void> {
-  const images = get(pendingImages);
-  pendingImages.set([]);
+async function discardPendingAttachments(): Promise<void> {
+  const attachments = get(pendingAttachments);
+  pendingAttachments.set([]);
   await Promise.allSettled(
-    images.map((image) => invoke("discard_temp_image", { path: image.path })),
+    attachments.map((attachment) => invoke("discard_temp_image", { path: attachment.path })),
   );
 }
 
@@ -531,12 +534,12 @@ export async function sendUserMessage(prompt: string, cwd: string): Promise<void
     return;
   }
 
-  const images = get(pendingImages);
-  const imagePaths = images.map((i) => i.path);
+  const attachments = get(pendingAttachments);
+  const attachmentPaths = attachments.map((attachment) => attachment.path);
   const model = get(selectedModel);
   const yolo = get(yoloEnabled);
 
-  if (!prompt.trim() && imagePaths.length === 0) return;
+  if (!prompt.trim() && attachmentPaths.length === 0) return;
   if (get(isRunning)) {
     showError("Wait for the current response to finish, or stop it.");
     return;
@@ -573,7 +576,7 @@ export async function sendUserMessage(prompt: string, cwd: string): Promise<void
     id: uid(),
     role: "user",
     content: prompt,
-    images: imagePaths,
+    images: attachmentPaths,
     timestamp: new Date().toISOString(),
   };
 
@@ -607,7 +610,7 @@ export async function sendUserMessage(prompt: string, cwd: string): Promise<void
       messageId: userMsg.id,
       role: "user",
       content: prompt,
-      images: imagePaths,
+      images: attachmentPaths,
       status: null,
     });
     // Sync auto-title / timestamps into UI without wiping the streaming bubble.
@@ -646,9 +649,9 @@ export async function sendUserMessage(prompt: string, cwd: string): Promise<void
   try {
     await invoke("send_message", {
       prompt,
-      imagePaths,
+      attachmentPaths,
     });
-    pendingImages.set([]);
+    pendingAttachments.set([]);
   } catch (e) {
     isRunning.set(false);
     runningSince.set(null);
@@ -698,18 +701,18 @@ export async function stopGeneration(): Promise<void> {
   runningSince.set(null);
 }
 
-export function addPendingImage(img: PendingImage) {
-  pendingImages.update((list) => {
-    if (list.some((x) => x.path === img.path)) return list;
-    return [...list, img];
+export function addPendingAttachment(attachment: PendingAttachment) {
+  pendingAttachments.update((list) => {
+    if (list.some((item) => item.path === attachment.path)) return list;
+    return [...list, attachment];
   });
 }
 
-export function removePendingImage(id: string) {
-  const image = get(pendingImages).find((item) => item.id === id);
-  pendingImages.update((list) => list.filter((x) => x.id !== id));
-  if (image) {
-    void invoke("discard_temp_image", { path: image.path }).catch((e) =>
+export function removePendingAttachment(id: string) {
+  const attachment = get(pendingAttachments).find((item) => item.id === id);
+  pendingAttachments.update((list) => list.filter((item) => item.id !== id));
+  if (attachment) {
+    void invoke("discard_temp_image", { path: attachment.path }).catch((e) =>
       debugWarn("discard pending image", e),
     );
   }

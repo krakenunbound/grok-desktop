@@ -6,6 +6,7 @@ use crate::grok_cli::{self, GrokCliOverview};
 use crate::grok_process::{self, GrokManager, GrokStatus, SessionConfig};
 use crate::image_handler::{self, SavedImage};
 use crate::launch_status::{self, LaunchStatus, LaunchStatusSnapshot};
+use crate::usage::{self, UsageSnapshot};
 use chrono::Utc;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -175,6 +176,7 @@ pub fn save_chat(session: ChatSession) -> Result<(), String> {
         return Err("Chat history limit exceeded".into());
     }
     let mut total = 0usize;
+    let settings = config::load_settings();
     for m in &session.messages {
         total = total.saturating_add(m.content.len());
         if total > config::MAX_MESSAGE_CHARS * 4 {
@@ -185,6 +187,12 @@ pub fn save_chat(session: ChatSession) -> Result<(), String> {
         }
         if !matches!(m.role.as_str(), "user" | "assistant" | "system") {
             return Err("Invalid message role".into());
+        }
+        if m.images.len() > 16 {
+            return Err("Too many attachments in a message".into());
+        }
+        for path in &m.images {
+            let _ = image_handler::validate_managed_attachment(&settings, path)?;
         }
     }
     config::save_chat(&session)
@@ -221,7 +229,11 @@ pub fn append_chat_message(
         return Err("Message too large to persist".into());
     }
     if images.len() > 16 {
-        return Err("Too many image attachments".into());
+        return Err("Too many attachments".into());
+    }
+    let settings = config::load_settings();
+    for path in &images {
+        let _ = image_handler::validate_managed_attachment(&settings, path)?;
     }
     let mut session = config::load_chat(&chat_id)?;
     // IPC retries are safe: return the already-persisted result instead of
@@ -300,10 +312,10 @@ pub async fn send_message(
     app: AppHandle,
     manager: State<'_, GrokManager>,
     prompt: String,
-    image_paths: Vec<String>,
+    attachment_paths: Vec<String>,
 ) -> Result<(), String> {
     let settings = config::load_settings();
-    grok_process::send_message(app, manager, prompt, image_paths, settings.grok_binary).await
+    grok_process::send_message(app, manager, prompt, attachment_paths, settings.grok_binary).await
 }
 
 #[tauri::command]
@@ -354,6 +366,12 @@ pub fn import_image_path(path: String) -> Result<SavedImage, String> {
 }
 
 #[tauri::command]
+pub fn import_attachment_path(path: String) -> Result<SavedImage, String> {
+    let settings = config::load_settings();
+    image_handler::import_attachment_path(&settings, &path)
+}
+
+#[tauri::command]
 pub fn discard_temp_image(path: String) -> Result<(), String> {
     let settings = config::load_settings();
     image_handler::discard_temp_image(&settings, &path)
@@ -388,6 +406,11 @@ pub fn resolve_grok_binary() -> Result<String, String> {
     Ok(grok_process::resolve_grok_binary(&settings.grok_binary)?
         .to_string_lossy()
         .to_string())
+}
+
+#[tauri::command]
+pub fn get_usage() -> UsageSnapshot {
+    usage::load_usage()
 }
 
 // --- Launch / WebView load reporting ---

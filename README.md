@@ -107,18 +107,19 @@ npm run build
 
 ## Features
 
-| Feature            | Behavior                                                                                                                  |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| Chat               | Headless turns: `grok -p ... -m ... --cwd ... --output-format plain`                                                      |
-| YOLO               | Passes `--always-approve`                                                                                                 |
-| Agent Transparency | **Default Hidden** (status only). **Verbose** streams raw output. Per-message “Show agent details”; say “show raw output” |
-| Images             | Paste/drop → `temp_images/` (max 20 MB, PNG/JPEG/GIF/WebP/BMP)                                                            |
-| Projects           | Folder picker + pin/recent; session cwd follows project                                                                   |
-| History            | Per-chat JSON under app data; last chat restored on launch                                                                |
-| CLI Context        | Context panel shows Grok CLI capabilities, recent CLI sessions, tracked worktrees, MCP servers, and plugins               |
-| Tray               | Show/hide, New Chat, Toggle YOLO, Quit                                                                                    |
-| Documentation      | In-app Docs modal with quick start, troubleshooting, and roadmap notes                                                    |
-| Shortcuts          | `Ctrl+N` new chat · `Ctrl+Shift+Y` YOLO · `Ctrl+Shift+V` Verbose · `Ctrl+,` settings · `F1` docs                          |
+| Feature            | Behavior                                                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Chat               | Headless turns: `grok -p ... -m ... --cwd ... --output-format plain`                                                              |
+| YOLO               | Passes `--always-approve`                                                                                                         |
+| Agent Transparency | **Default Hidden** (status only). **Verbose** streams raw output. Per-message “Show agent details”; say “show raw output”         |
+| Attachments        | Paste images or drop/select images, video, audio, documents, code, and archives; managed local copies, previews, 16/file turn cap |
+| Usage              | Allocation remaining, reset time, prepaid credits, and on-demand spend from Grok CLI billing telemetry                            |
+| Projects           | Folder picker + pin/recent; session cwd follows project                                                                           |
+| History            | Per-chat JSON under app data; last chat restored on launch                                                                        |
+| CLI Context        | Context panel shows Grok CLI capabilities, recent CLI sessions, tracked worktrees, MCP servers, and plugins                       |
+| Tray               | Show/hide, New Chat, Toggle YOLO, Quit                                                                                            |
+| Documentation      | In-app Docs modal with quick start, troubleshooting, and roadmap notes                                                            |
+| Shortcuts          | `Ctrl+N` new chat · `Ctrl+Shift+Y` YOLO · `Ctrl+Shift+V` Verbose · `Ctrl+,` settings · `F1` docs                                  |
 
 Browser-capable MCP servers such as Playwright can be detected and shown when Grok reports them, but Grok Desktop does not yet include an embedded browser panel or first-class browser automation UI.
 
@@ -139,12 +140,12 @@ Browser-capable MCP servers such as Playwright can be detected and shown when Gr
 
 `%APPDATA%\com.the-kraken.grok-desktop\`
 
-| Path            | Purpose                                        |
-| --------------- | ---------------------------------------------- |
-| `settings.json` | Model, YOLO default, Verbose default, UI prefs |
-| `projects.json` | Pinned/recent projects                         |
-| `chats/*.json`  | Chat history (plaintext)                       |
-| `temp_images/`  | Attached screenshots                           |
+| Path            | Purpose                                             |
+| --------------- | --------------------------------------------------- |
+| `settings.json` | Model, YOLO default, Verbose default, UI prefs      |
+| `projects.json` | Pinned/recent projects                              |
+| `chats/*.json`  | Chat history (plaintext)                            |
+| `temp_images/`  | Managed message attachments (legacy directory name) |
 
 ---
 

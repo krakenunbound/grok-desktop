@@ -2,6 +2,8 @@
   import { onMount } from "svelte";
   import Message from "./Message.svelte";
   import ImageDropZone from "./ImageDropZone.svelte";
+  import ModelSelector from "./ModelSelector.svelte";
+  import YoloToggle from "./YoloToggle.svelte";
   import {
     currentChat,
     isRunning,
@@ -80,14 +82,14 @@
         <img class="logo" src="/grok-gui-logo.webp" alt="" aria-hidden="true" />
         <h2>Grok Desktop</h2>
         <p>
-          Chat with Grok Build without the terminal. Drop images, toggle YOLO, pick a project, and
+          Chat with Grok Build without the terminal. Drop files, toggle YOLO, pick a project, and
           go.
         </p>
         <ul>
           <li><kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> newline</li>
           <li><kbd>Ctrl+N</kbd> new chat · <kbd>Ctrl+Shift+Y</kbd> YOLO</li>
           <li><kbd>Ctrl+Shift+V</kbd> Verbose / Hidden agent output</li>
-          <li>Paste or drop screenshots · say “show raw output” to reveal</li>
+          <li>Paste images or drop files · say “show raw output” to reveal</li>
         </ul>
       </div>
     {:else}
@@ -122,10 +124,14 @@
         disabled={$isRunning}
       ></textarea>
       <div class="actions">
-        {#if $isRunning}
-          <button type="button" class="stop" onclick={() => stopGeneration()}>Stop</button>
-        {/if}
-        <button type="submit" class="send" disabled={$isRunning}>Send</button>
+        <YoloToggle />
+        <div class="generation-actions">
+          <ModelSelector />
+          {#if $isRunning}
+            <button type="button" class="stop" onclick={() => stopGeneration()}>Stop</button>
+          {/if}
+          <button type="submit" class="send" disabled={$isRunning}>Send</button>
+        </div>
       </div>
     </form>
   </footer>
@@ -251,7 +257,13 @@
   }
   .actions {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .generation-actions {
+    display: flex;
+    align-items: center;
     gap: 0.5rem;
   }
   .send,

@@ -56,9 +56,28 @@
     return html;
   }
 
-  function imageUrl(src: string): string {
+  function assetUrl(src: string): string {
     if (/^(data:|https?:|asset:)/i.test(src)) return src;
     return convertFileSrc(src);
+  }
+
+  function filename(src: string): string {
+    return (src.split(/[/\\]/).pop() || "Attachment").replace(
+      /^file_\d{8}_\d{6}_[0-9a-f]{8}_/i,
+      "",
+    );
+  }
+
+  function attachmentKind(src: string): "image" | "video" | "audio" | "file" {
+    const ext = src.split(".").pop()?.toLowerCase() || "";
+    if (["png", "jpg", "jpeg", "gif", "webp", "bmp"].includes(ext)) return "image";
+    if (["mp4", "webm", "mov", "m4v", "avi", "mkv"].includes(ext)) return "video";
+    if (["mp3", "wav", "m4a", "aac", "ogg", "flac"].includes(ext)) return "audio";
+    return "file";
+  }
+
+  function extension(src: string): string {
+    return filename(src).split(".").pop()?.toUpperCase().slice(0, 6) || "FILE";
   }
 </script>
 
@@ -75,11 +94,23 @@
     </div>
 
     {#if message.images?.length}
-      <div class="thumbs">
+      <div class="attachments">
         {#each message.images as src}
-          <div class="thumb" title={src}>
-            <img src={imageUrl(src)} alt={src.split(/[/\\]/).pop() || "Attached image"} />
-            <span class="path">{src.split(/[/\\]/).pop()}</span>
+          <div class="attachment" class:wide={attachmentKind(src) !== "image"} title={src}>
+            {#if attachmentKind(src) === "image"}
+              <img src={assetUrl(src)} alt={filename(src)} />
+            {:else if attachmentKind(src) === "video"}
+              <!-- svelte-ignore a11y_media_has_caption: user-supplied videos may not include a caption track -->
+              <video src={assetUrl(src)} controls preload="metadata" aria-label={filename(src)}
+              ></video>
+            {:else if attachmentKind(src) === "audio"}
+              <div class="file-mark">AUDIO</div>
+              <audio src={assetUrl(src)} controls preload="metadata" aria-label={filename(src)}
+              ></audio>
+            {:else}
+              <div class="file-mark">{extension(src)}</div>
+            {/if}
+            <span class="path">{filename(src)}</span>
           </div>
         {/each}
       </div>
@@ -152,13 +183,13 @@
     color: var(--text);
     word-break: break-word;
   }
-  .thumbs {
+  .attachments {
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem;
     margin-bottom: 0.5rem;
   }
-  .thumb {
+  .attachment {
     width: 92px;
     border-radius: 6px;
     overflow: hidden;
@@ -167,12 +198,34 @@
     font-size: 0.75rem;
     color: var(--muted);
   }
-  .thumb img {
+  .attachment.wide {
+    width: min(320px, 100%);
+  }
+  .attachment img,
+  .attachment video {
     display: block;
     width: 92px;
     height: 72px;
     object-fit: cover;
     background: #050507;
+  }
+  .attachment.wide video {
+    width: 100%;
+    height: 180px;
+  }
+  .attachment audio {
+    width: calc(100% - 0.7rem);
+    height: 34px;
+    margin: 0 0.35rem 0.35rem;
+  }
+  .file-mark {
+    height: 54px;
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
   }
   .path {
     display: block;
