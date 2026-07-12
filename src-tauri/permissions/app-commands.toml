@@ -9,6 +9,7 @@ commands.allow = [
   "get_app_data_dir",
   "list_projects",
   "add_project",
+  "create_project_folder",
   "remove_project",
   "set_project_pinned",
   "set_project_archived",

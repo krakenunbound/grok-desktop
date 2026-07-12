@@ -28,6 +28,7 @@ pub fn save_settings(mut settings: AppSettings) -> Result<AppSettings, String> {
     settings.grok_binary = settings.grok_binary.trim().to_string();
     settings.temp_images_dir = settings.temp_images_dir.trim().to_string();
     settings.permission_mode = settings.permission_mode.trim().to_string();
+    settings.reasoning_effort = settings.reasoning_effort.trim().to_string();
     settings.tools = settings.tools.trim().to_string();
     settings.disallowed_tools = settings.disallowed_tools.trim().to_string();
     settings.allow_rules = settings.allow_rules.trim().to_string();
@@ -36,6 +37,12 @@ pub fn save_settings(mut settings: AppSettings) -> Result<AppSettings, String> {
     settings.max_turns = settings.max_turns.trim().to_string();
     if settings.default_model.trim().is_empty() || settings.default_model.len() > 64 {
         return Err("Invalid default model".into());
+    }
+    if !matches!(
+        settings.reasoning_effort.as_str(),
+        "low" | "medium" | "high"
+    ) {
+        return Err("Invalid reasoning effort".into());
     }
     if !matches!(
         settings.permission_mode.as_str(),
@@ -102,6 +109,11 @@ pub fn list_projects() -> ProjectStore {
 #[tauri::command]
 pub fn add_project(path: String, name: Option<String>) -> Result<Project, String> {
     config::add_or_update_project(&path, name)
+}
+
+#[tauri::command]
+pub fn create_project_folder(parent: String, name: String) -> Result<String, String> {
+    config::create_project_folder(&parent, &name)
 }
 
 #[tauri::command]

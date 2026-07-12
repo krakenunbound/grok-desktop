@@ -7,9 +7,11 @@ import { debugWarn } from "$lib/log";
 
 export type PermissionMode =
   "default" | "acceptEdits" | "auto" | "dontAsk" | "bypassPermissions" | "plan";
+export type ReasoningEffort = "low" | "medium" | "high";
 
 export interface AppSettings {
   default_model: string;
+  reasoning_effort: ReasoningEffort;
   yolo_default: boolean;
   theme: string;
   sidebar_collapsed: boolean;
@@ -34,6 +36,7 @@ export interface AppSettings {
 
 export const defaultSettings = (): AppSettings => ({
   default_model: "grok-4.5",
+  reasoning_effort: "high",
   yolo_default: false,
   theme: "dark",
   sidebar_collapsed: false,
@@ -64,12 +67,15 @@ function normalizeSettings(s: Partial<AppSettings>): AppSettings {
     disable_web_search: !!s.disable_web_search,
     subagents_enabled: s.subagents_enabled !== false,
     memory_enabled: !!s.memory_enabled,
+    reasoning_effort: ["low", "medium", "high"].includes(s.reasoning_effort || "")
+      ? (s.reasoning_effort as ReasoningEffort)
+      : "high",
     permission_mode: s.permission_mode || "default",
   };
 }
 
 export const settings = writable<AppSettings>(defaultSettings());
-export const models = writable<string[]>(["grok-4.5", "grok-4", "grok-3", "grok-3-mini", "grok-2"]);
+export const models = writable<string[]>(["grok-4.5", "grok-composer-2.5-fast"]);
 
 export async function loadSettings(): Promise<AppSettings> {
   try {

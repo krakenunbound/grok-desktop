@@ -118,7 +118,7 @@ fn add_config_mcp_servers(
 }
 
 fn grok_json(binary: &std::path::Path, args: &[&str]) -> Option<Value> {
-    let output = Command::new(binary).args(args).output().ok()?;
+    let output = hidden_grok_command(binary).args(args).output().ok()?;
     serde_json::from_slice::<Value>(&output.stdout).ok()
 }
 
@@ -297,7 +297,10 @@ fn list_plugins(grok_binary_override: &str) -> Vec<PluginInfo> {
     let Ok(binary) = grok_process::resolve_grok_binary(grok_binary_override) else {
         return Vec::new();
     };
-    let Ok(output) = Command::new(binary).args(["plugin", "list"]).output() else {
+    let Ok(output) = hidden_grok_command(&binary)
+        .args(["plugin", "list"])
+        .output()
+    else {
         return Vec::new();
     };
     let text = String::from_utf8_lossy(&output.stdout).to_string();
@@ -362,7 +365,7 @@ pub fn set_plugin_enabled(
     }
     let binary = grok_process::resolve_grok_binary(grok_binary_override)?;
     let action = if enabled { "enable" } else { "disable" };
-    let output = Command::new(binary)
+    let output = hidden_grok_command(&binary)
         .args(["plugin", action, name])
         .output()
         .map_err(|e| format!("run grok plugin {action}: {e}"))?;
@@ -376,4 +379,14 @@ pub fn set_plugin_enabled(
         ));
     }
     inventory(grok_binary_override)
+}
+fn hidden_grok_command(binary: &std::path::Path) -> Command {
+    let mut command = Command::new(binary);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
 }

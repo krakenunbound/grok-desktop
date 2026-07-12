@@ -27,7 +27,8 @@
     yoloEnabled,
   } from "$lib/stores/chat";
   import { invoke } from "@tauri-apps/api/core";
-  import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
+  import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+  import ProjectDialog from "$lib/components/ProjectDialog.svelte";
 
   interface Props {
     collapsed: boolean;
@@ -41,6 +42,7 @@
   let now = $state(Date.now());
   let searchQuery = $state("");
   let searchInput = $state<HTMLInputElement>();
+  let projectDialogOpen = $state(false);
   let normalizedQuery = $derived(searchQuery.trim().toLowerCase());
   let filteredPinnedProjects = $derived(
     $pinnedProjects.filter((project) => matchesProject(project)),
@@ -115,15 +117,9 @@
     }
   }
 
-  async function onAddProject() {
+  async function onAddProject(path: string) {
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: "Select project folder",
-      });
-      if (!selected || Array.isArray(selected)) return;
-      const project = await addProject(selected);
+      const project = await addProject(path);
       await selectProject(project);
     } catch (e) {
       showError(e);
@@ -268,8 +264,9 @@
   </div>
 
   {#if !collapsed}
-    <button type="button" class="new-chat" onclick={onNewChat}>New chat</button>
-    <button type="button" class="add-proj" onclick={onAddProject}>Open Project...</button>
+    <button type="button" class="new-project" onclick={() => (projectDialogOpen = true)}>
+      <span aria-hidden="true">＋</span> New Project
+    </button>
 
     <div class="toolbar">
       <select bind:value={$projectSort} title="Sort projects">
@@ -309,7 +306,16 @@
         </div>
       {:else}
         {#each filteredPinnedProjects as p (p.id)}
-          <div class="project-row" class:active={$activeProjectId === p.id}>
+          <!-- svelte-ignore a11y_no_static_element_interactions: hover reveals the same menu available from the keyboard-accessible action button -->
+          <div
+            class="project-row"
+            class:active={$activeProjectId === p.id}
+            onmouseenter={() => {
+              openChatMenu = null;
+              openProjectMenu = p.id;
+            }}
+            onmouseleave={() => (openProjectMenu = null)}
+          >
             <button
               type="button"
               class="project-main"
@@ -362,10 +368,16 @@
     <div class="section projects">
       <div class="label">Recent Projects</div>
       {#each filteredRecentProjects as p (p.id)}
+        <!-- svelte-ignore a11y_no_static_element_interactions: hover reveals the same menu available from the keyboard-accessible action button -->
         <div
           class="project-row"
           class:active={$activeProjectId === p.id}
           class:archived={p.archived}
+          onmouseenter={() => {
+            openChatMenu = null;
+            openProjectMenu = p.id;
+          }}
+          onmouseleave={() => (openProjectMenu = null)}
         >
           <button
             type="button"
@@ -416,15 +428,33 @@
         <div class="empty-hint">
           {normalizedQuery
             ? "No matching recent projects."
-            : "No projects yet. Use Open Project... to add a folder."}
+            : "No projects yet. Use New Project to get started."}
         </div>
       {/each}
     </div>
 
     <div class="section chats">
-      <div class="label">Chats</div>
+      <div class="section-head">
+        <div class="label">Chats</div>
+        <button
+          type="button"
+          class="section-add"
+          onclick={onNewChat}
+          title="New chat"
+          aria-label="New chat">＋</button
+        >
+      </div>
       {#each filteredChats as c (c.id)}
-        <div class="chat-row" class:active={$currentChat?.id === c.id}>
+        <!-- svelte-ignore a11y_no_static_element_interactions: hover reveals the same menu available from the keyboard-accessible action button -->
+        <div
+          class="chat-row"
+          class:active={$currentChat?.id === c.id}
+          onmouseenter={() => {
+            openProjectMenu = null;
+            openChatMenu = c.id;
+          }}
+          onmouseleave={() => (openChatMenu = null)}
+        >
           <button type="button" class="chat" onclick={() => selectChat(c.id)}>
             <span>{c.title || "Untitled"}</span>
           </button>
@@ -461,6 +491,12 @@
     </div>
   {/if}
 </aside>
+
+<ProjectDialog
+  open={projectDialogOpen}
+  onclose={() => (projectDialogOpen = false)}
+  onselect={onAddProject}
+/>
 
 <style>
   .sidebar {
@@ -516,8 +552,7 @@
     cursor: pointer;
     font-size: 0.9rem;
   }
-  .new-chat,
-  .add-proj {
+  .new-project {
     width: 100%;
     border-radius: 8px;
     border: 1px solid var(--border);
@@ -527,12 +562,14 @@
     cursor: pointer;
     text-align: left;
   }
-  .new-chat {
+  .new-project {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
     background: var(--accent-gradient);
     color: var(--accent-contrast);
     border: none;
   }
-  .add-proj,
   .toolbar select {
     background: var(--surface);
     color: var(--text);
@@ -614,6 +651,26 @@
     letter-spacing: 0.08em;
     color: var(--muted);
     padding: 0.45rem 0.35rem 0.15rem;
+  }
+  .section-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+  }
+  .section-add {
+    width: 25px;
+    height: 25px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .section-add:hover,
+  .section-add:focus-visible {
+    border-color: var(--border);
+    background: var(--surface-2);
+    color: var(--accent);
   }
   .empty-hint {
     font-size: 0.78rem;

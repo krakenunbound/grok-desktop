@@ -1,59 +1,95 @@
 <script lang="ts">
-  import { selectedModel } from "$lib/stores/chat";
-  import { models as modelList } from "$lib/stores/settings";
+  import { reasoningEffort, selectedModel } from "$lib/stores/chat";
+  import {
+    models as modelList,
+    persistSettings,
+    settings,
+    type ReasoningEffort,
+  } from "$lib/stores/settings";
   import { invoke } from "@tauri-apps/api/core";
 
-  // Prefer settings-backed model list; fall back to defaults.
-  let list = $derived($modelList.length ? $modelList : ["grok-4.5", "grok-4", "grok-3"]);
+  let list = $derived($modelList.length ? $modelList : ["grok-4.5", "grok-composer-2.5-fast"]);
 
-  async function onChange(e: Event) {
-    const value = (e.target as HTMLSelectElement).value;
+  function modelLabel(model: string): string {
+    if (model === "grok-4.5") return "Grok 4.5 · Frontier";
+    if (model === "grok-composer-2.5-fast") return "Composer 2.5 · Fast";
+    return model;
+  }
+
+  async function changeModel(event: Event) {
+    const value = (event.target as HTMLSelectElement).value;
     selectedModel.set(value);
+    await persistSettings({ ...$settings, default_model: value });
     try {
       await invoke("set_session_model", { model: value });
     } catch {
-      /* no session yet — start_session will pick it up */
+      /* The next session start will use the selection. */
     }
+  }
+
+  async function changeEffort(event: Event) {
+    const value = (event.target as HTMLSelectElement).value as ReasoningEffort;
+    reasoningEffort.set(value);
+    await persistSettings({ ...$settings, reasoning_effort: value });
   }
 </script>
 
-<label class="model">
-  <span class="sr">Model</span>
-  <select value={$selectedModel} onchange={onChange} title="Model">
-    {#each list as m}
-      <option value={m}>{m}</option>
-    {/each}
-  </select>
-</label>
+<div class="selectors">
+  <label title="Model">
+    <span class="sr">Model</span>
+    <select value={$selectedModel} onchange={changeModel} aria-label="Model">
+      {#each list as model}
+        <option value={model}>{modelLabel(model)}</option>
+      {/each}
+    </select>
+  </label>
+  <label title="Reasoning effort">
+    <span class="sr">Reasoning effort</span>
+    <select
+      class="effort"
+      value={$reasoningEffort}
+      onchange={changeEffort}
+      aria-label="Reasoning effort"
+    >
+      <option value="low">Low · Quick</option>
+      <option value="medium">Medium · Balanced</option>
+      <option value="high">High · Deep</option>
+    </select>
+  </label>
+</div>
 
 <style>
-  .model select {
+  .selectors {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  select {
     appearance: none;
     background: var(--surface-2);
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 0.4rem 1.8rem 0.4rem 0.7rem;
-    font-size: 0.85rem;
+    padding: 0.4rem 1.7rem 0.4rem 0.65rem;
+    font-size: 0.78rem;
     font-family: inherit;
     cursor: pointer;
     background-image:
       linear-gradient(45deg, transparent 50%, var(--muted) 50%),
       linear-gradient(135deg, var(--muted) 50%, transparent 50%);
     background-position:
-      calc(100% - 14px) 55%,
-      calc(100% - 9px) 55%;
-    background-size:
-      5px 5px,
-      5px 5px;
+      calc(100% - 13px) 55%,
+      calc(100% - 8px) 55%;
+    background-size: 5px 5px;
     background-repeat: no-repeat;
   }
-  .model select:hover {
+  select:hover,
+  select:focus {
     border-color: var(--accent-dim);
-  }
-  .model select:focus {
     outline: none;
-    border-color: var(--accent);
+  }
+  .effort {
+    max-width: 142px;
   }
   .sr {
     position: absolute;
@@ -61,5 +97,16 @@
     height: 1px;
     overflow: hidden;
     clip: rect(0 0 0 0);
+  }
+  @media (max-width: 1050px) {
+    .selectors {
+      gap: 0.25rem;
+    }
+    select {
+      max-width: 145px;
+    }
+    .effort {
+      max-width: 122px;
+    }
   }
 </style>

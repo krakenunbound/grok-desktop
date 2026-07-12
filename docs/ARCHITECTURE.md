@@ -24,25 +24,25 @@ flowchart LR
 
 ## Main Modules
 
-| Area | Files |
-| ---- | ----- |
-| App shell | `src/routes`, `src/lib/components` |
-| Chat state | `src/lib/stores/chat.ts` |
-| Project state | `src/lib/stores/projects.ts` |
-| Settings and capabilities | `src/lib/stores/settings.ts`, `src/lib/stores/capabilities.ts` |
-| Tauri command bridge | `src-tauri/src/commands.rs` |
-| Grok process execution | `src-tauri/src/grok_process.rs` |
-| Grok inventory/context | `src-tauri/src/capabilities.rs`, `src-tauri/src/grok_cli.rs` |
-| Local config and persistence | `src-tauri/src/config.rs` |
-| Images | `src-tauri/src/image_handler.rs` |
-| Tray | `src-tauri/src/tray.rs` |
+| Area                         | Files                                                          |
+| ---------------------------- | -------------------------------------------------------------- |
+| App shell                    | `src/routes`, `src/lib/components`                             |
+| Chat state                   | `src/lib/stores/chat.ts`                                       |
+| Project state                | `src/lib/stores/projects.ts`                                   |
+| Settings and capabilities    | `src/lib/stores/settings.ts`, `src/lib/stores/capabilities.ts` |
+| Tauri command bridge         | `src-tauri/src/commands.rs`                                    |
+| Grok process execution       | `src-tauri/src/grok_process.rs`                                |
+| Grok inventory/context       | `src-tauri/src/capabilities.rs`, `src-tauri/src/grok_cli.rs`   |
+| Local config and persistence | `src-tauri/src/config.rs`                                      |
+| Images                       | `src-tauri/src/image_handler.rs`                               |
+| Tray                         | `src-tauri/src/tray.rs`                                        |
 
 ## Chat Execution
 
 Each turn currently runs a bounded headless command:
 
 ```text
-grok -p <prompt> -m <model> --cwd <project> --output-format plain
+grok -p <prompt> -m <model> --reasoning-effort <level> --cwd <project> --output-format plain
 ```
 
 The app streams stdout/stderr to the frontend, keeps Hidden mode clean by default, and stores raw output for explicit reveal.

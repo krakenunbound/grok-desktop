@@ -436,6 +436,8 @@ pub async fn send_message(
 
     let advanced = crate::config::load_settings();
 
+    push_arg_value(&mut args, "--reasoning-effort", &advanced.reasoning_effort);
+
     if cfg.yolo {
         args.push("--always-approve".into());
     }

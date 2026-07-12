@@ -1,8 +1,8 @@
 # Grok Desktop
 
-Lightweight desktop GUI for the **Grok Build** CLI — Codex-inspired dark UI, YOLO mode, project switching, image drop/paste, system tray, chat history, and Grok CLI context visibility.
+Lightweight desktop GUI for the **Grok Build** CLI — Codex-inspired dark UI, project workspaces, explicit reasoning/access controls, rich file drop, system tray, chat history, and Grok CLI context visibility.
 
-**Current version:** 0.3.1
+**Current version:** 0.4.0
 **Stack:** Tauri 2 (Rust) + Svelte 5 (SvelteKit SPA)  
 **Platform:** Windows 10/11 primary (macOS/Linux later)
 
@@ -101,8 +101,8 @@ npm run build
 
 1. `grok --version` works in a terminal
 2. `grok login` if not authenticated
-3. Open Grok Desktop → **Open Project…** → send a message
-4. Optional: enable **YOLO** for `--always-approve`
+3. Open Grok Desktop → **New Project** → create a new project or use an existing folder
+4. Choose reasoning depth and an approval profile in the composer, then send a message
 5. Closing the window **hides to tray** — use tray **Quit Grok Desktop** to exit
 
 ---
@@ -112,11 +112,12 @@ npm run build
 | Feature            | Behavior                                                                                                                          |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | Chat               | Headless turns: `grok -p ... -m ... --cwd ... --output-format plain`                                                              |
-| YOLO               | Passes `--always-approve`                                                                                                         |
+| Approval           | Ask before actions, auto-approve edits, plan only, or full-access (`--always-approve`) profiles                                   |
+| Reasoning          | Low, medium, or high reasoning effort next to the model selector                                                                  |
 | Agent Transparency | **Default Hidden** (status only). **Verbose** streams raw output. Per-message “Show agent details”; say “show raw output”         |
 | Attachments        | Paste images or drop/select images, video, audio, documents, code, and archives; managed local copies, previews, 16/file turn cap |
 | Usage              | Allocation remaining, reset time, prepaid credits, and on-demand spend from Grok CLI billing telemetry                            |
-| Projects           | Folder picker + pin/recent; session cwd follows project                                                                           |
+| Projects           | Create a new project folder or open an existing one; session cwd follows the selected project                                     |
 | History            | Per-chat JSON under app data; last chat restored on launch                                                                        |
 | Search             | Filter projects and chats from one sidebar field; `Ctrl+K` focuses it                                                             |
 | Transcript tools   | Export any chat as Markdown; copy answers or code blocks; retry prior user messages                                               |
@@ -146,7 +147,7 @@ Browser-capable MCP servers such as Playwright can be detected and shown when Gr
 
 | Path            | Purpose                                             |
 | --------------- | --------------------------------------------------- |
-| `settings.json` | Model, YOLO default, Verbose default, UI prefs      |
+| `settings.json` | Model, reasoning, approval, output, and UI defaults |
 | `projects.json` | Pinned/recent projects                              |
 | `chats/*.json`  | Chat history (plaintext)                            |
 | `temp_images/`  | Managed message attachments (legacy directory name) |

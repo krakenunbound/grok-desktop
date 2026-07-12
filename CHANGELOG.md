@@ -2,6 +2,23 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## 0.4.0 - 2026-07-12
+
+### Added
+
+- Guided New Project flow for creating a project or using an existing folder.
+- Composer selectors for available Grok models and low, medium, or high reasoning effort.
+- Clear approval profiles for ask-before-actions, auto-approved edits, plan-only, and full access.
+
+### Changed
+
+- Moved new-chat creation beside the Chats heading and made project/chat action menus reveal on hover.
+- Updated project, settings, context, and documentation language around the redesigned workflow.
+
+### Fixed
+
+- Prevented background Grok capability scans from flashing a Command Prompt window on startup.
+
 ## 0.3.1 - 2026-07-12
 
 ### Changed

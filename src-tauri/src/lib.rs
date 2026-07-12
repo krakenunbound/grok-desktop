@@ -230,6 +230,7 @@ pub fn run() {
             commands::get_app_data_dir,
             commands::list_projects,
             commands::add_project,
+            commands::create_project_folder,
             commands::remove_project,
             commands::set_project_pinned,
             commands::set_project_archived,

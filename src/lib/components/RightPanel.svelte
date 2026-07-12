@@ -1,6 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { status, isRunning, yoloEnabled, selectedModel, verboseMode } from "$lib/stores/chat";
+  import {
+    status,
+    isRunning,
+    yoloEnabled,
+    selectedModel,
+    reasoningEffort,
+    verboseMode,
+  } from "$lib/stores/chat";
   import { activeProject } from "$lib/stores/projects";
   import { settings } from "$lib/stores/settings";
   import {
@@ -47,6 +54,10 @@
       <div>
         <div class="label">YOLO</div>
         <div class="value">{$yoloEnabled ? "On" : "Off"}</div>
+      </div>
+      <div>
+        <div class="label">Reasoning</div>
+        <div class="value">{$reasoningEffort}</div>
       </div>
       <div>
         <div class="label">Plan</div>

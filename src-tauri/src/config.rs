@@ -14,6 +14,7 @@ use uuid::Uuid;
 #[serde(default)]
 pub struct AppSettings {
     pub default_model: String,
+    pub reasoning_effort: String,
     pub yolo_default: bool,
     pub theme: String,
     pub sidebar_collapsed: bool,
@@ -44,6 +45,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             default_model: "grok-4.5".to_string(),
+            reasoning_effort: "high".to_string(),
             yolo_default: false,
             theme: "dark".to_string(),
             sidebar_collapsed: false,
@@ -275,6 +277,63 @@ pub fn add_or_update_project(path: &str, name: Option<String>) -> Result<Project
     store.projects.push(project.clone());
     save_projects(&store)?;
     Ok(project)
+}
+
+pub fn create_project_folder(parent: &str, name: &str) -> Result<String, String> {
+    let parent = PathBuf::from(parent.trim())
+        .canonicalize()
+        .map_err(|e| format!("Project location does not exist: {e}"))?;
+    if !parent.is_dir() {
+        return Err("Project location must be a folder".into());
+    }
+
+    let name = name.trim();
+    let device_stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
+    let reserved_device = matches!(
+        device_stem.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    );
+    if name.is_empty()
+        || name.len() > 128
+        || matches!(name, "." | "..")
+        || name.ends_with(['.', ' '])
+        || reserved_device
+        || name
+            .chars()
+            .any(|c| c.is_control() || "<>:\"/\\|?*".contains(c))
+    {
+        return Err("Use a valid folder name without Windows-reserved characters".into());
+    }
+
+    let path = parent.join(name);
+    if path.exists() {
+        return Err("A file or folder with that name already exists".into());
+    }
+    fs::create_dir(&path).map_err(|e| format!("Create project folder: {e}"))?;
+    path.canonicalize()
+        .map(|value| value.to_string_lossy().to_string())
+        .map_err(|e| format!("Resolve project folder: {e}"))
 }
 
 pub fn paths_equal(left: &str, right: &str) -> bool {
@@ -632,12 +691,14 @@ fn replace_file(source: &Path, destination: &Path) -> std::io::Result<()> {
 
 /// Known Grok model IDs for the UI selector (backend may accept any string).
 pub fn default_models() -> Vec<&'static str> {
-    vec!["grok-4.5", "grok-4", "grok-3", "grok-3-mini", "grok-2"]
+    vec!["grok-4.5", "grok-composer-2.5-fast"]
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{chat_markdown, write_json_atomic, ChatMessage, ChatSession};
+    use super::{
+        chat_markdown, create_project_folder, write_json_atomic, ChatMessage, ChatSession,
+    };
     use chrono::{TimeZone, Utc};
     use serde_json::json;
     use std::fs;
@@ -684,5 +745,20 @@ mod tests {
         assert!(markdown.contains("## You\n\nPlease review this."));
         assert!(markdown.contains("- `report.md`"));
         assert!(!markdown.contains(r"C:\managed"));
+    }
+
+    #[test]
+    fn project_folder_creation_rejects_unsafe_names() {
+        let parent = std::env::temp_dir().join(format!("grok-project-test-{}", Uuid::new_v4()));
+        fs::create_dir(&parent).expect("create parent");
+
+        let created = create_project_folder(&parent.to_string_lossy(), "Demo Project")
+            .expect("create project folder");
+        assert!(std::path::Path::new(&created).is_dir());
+        assert!(create_project_folder(&parent.to_string_lossy(), "../escape").is_err());
+        assert!(create_project_folder(&parent.to_string_lossy(), "CON").is_err());
+        assert!(create_project_folder(&parent.to_string_lossy(), "Demo Project").is_err());
+
+        fs::remove_dir_all(parent).expect("remove project test");
     }
 }

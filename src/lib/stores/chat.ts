@@ -74,6 +74,7 @@ export const streamBuffer = writable("");
 export const verboseMode = writable(false);
 export const errorToast = writable<string | null>(null);
 export const selectedModel = writable("grok-4.5");
+export const reasoningEffort = writable<"low" | "medium" | "high">("high");
 export const yoloEnabled = writable(false);
 
 let unlisteners: UnlistenFn[] = [];

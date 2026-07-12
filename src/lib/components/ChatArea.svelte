@@ -88,12 +88,12 @@
         <img class="logo" src="/grok-gui-logo.webp" alt="" aria-hidden="true" />
         <h2>Grok Desktop</h2>
         <p>
-          Chat with Grok Build without the terminal. Drop files, toggle YOLO, pick a project, and
-          go.
+          Chat with Grok Build without the terminal. Create a project, choose the depth and access
+          level, then go.
         </p>
         <ul>
           <li><kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> newline</li>
-          <li><kbd>Ctrl+N</kbd> new chat · <kbd>Ctrl+Shift+Y</kbd> YOLO</li>
+          <li><kbd>Ctrl+N</kbd> new chat · choose access in the composer</li>
           <li><kbd>Ctrl+Shift+V</kbd> Verbose / Hidden agent output</li>
           <li>Paste images or drop files · say “show raw output” to reveal</li>
         </ul>

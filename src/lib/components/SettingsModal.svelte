@@ -1,6 +1,6 @@
 <script lang="ts">
   import { settings, persistSettings, type AppSettings } from "$lib/stores/settings";
-  import { verboseMode } from "$lib/stores/chat";
+  import { reasoningEffort, selectedModel, verboseMode, yoloEnabled } from "$lib/stores/chat";
   import {
     inventory,
     loadInventory,
@@ -48,6 +48,9 @@
     msg = "";
     try {
       await persistSettings(draft);
+      selectedModel.set(draft.default_model);
+      reasoningEffort.set(draft.reasoning_effort);
+      yoloEnabled.set(!!draft.yolo_default);
       verboseMode.set(!!draft.verbose_mode);
       msg = "Saved";
       setTimeout(onclose, 400);
@@ -85,6 +88,15 @@
         <label>
           Default model
           <input bind:value={draft.default_model} />
+        </label>
+
+        <label>
+          Reasoning effort
+          <select bind:value={draft.reasoning_effort}>
+            <option value="low">Low · Quick</option>
+            <option value="medium">Medium · Balanced</option>
+            <option value="high">High · Deep</option>
+          </select>
         </label>
 
         <label>

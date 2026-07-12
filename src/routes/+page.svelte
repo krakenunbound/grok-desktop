@@ -16,6 +16,7 @@
     chatList,
     errorToast,
     selectedModel,
+    reasoningEffort,
     yoloEnabled,
     verboseMode,
     setVerboseMode,
@@ -88,6 +89,7 @@
       sidebarCollapsed = s.sidebar_collapsed;
       rightOpen = s.right_panel_open;
       selectedModel.set(s.default_model || "grok-4.5");
+      reasoningEffort.set(s.reasoning_effort || "high");
       yoloEnabled.set(!!s.yolo_default);
       verboseMode.set(!!s.verbose_mode);
 

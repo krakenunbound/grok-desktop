@@ -41,8 +41,11 @@
       <section id="quick-start">
         <h3>Quick start</h3>
         <ol>
-          <li>Open a project folder with <strong>Open Project...</strong>.</li>
-          <li>Select a model and permission mode in <strong>Settings</strong>.</li>
+          <li>
+            Select <strong>New Project</strong>, then create a new project or use an existing
+            folder.
+          </li>
+          <li>Choose the model, reasoning depth, and approval profile in the composer.</li>
           <li>
             Send a prompt. Hidden mode shows clean answers; Verbose mode shows raw agent output.
           </li>
@@ -55,7 +58,10 @@
         <ul>
           <li><strong>Pinned Projects</strong> keeps important folders at the top.</li>
           <li><strong>Recent Projects</strong> tracks folders opened from the sidebar.</li>
-          <li>Use a project's three-dot menu for Pin, Archive, Notes, and Delete.</li>
+          <li>
+            Hover a project row to reveal Pin, Archive, Notes, and Remove; the three-dot button
+            keeps the same menu keyboard-accessible.
+          </li>
           <li>Press <strong>Ctrl+K</strong> to search projects and chats together.</li>
           <li>
             Switching projects changes the Grok working directory and loads that folder's chat list.
@@ -89,8 +95,8 @@
         <h3>Settings and context</h3>
         <ul>
           <li>
-            Settings controls model defaults, YOLO, plan mode, memory, web search, subagents, and
-            permissions.
+            Settings controls model and reasoning defaults, plan mode, memory, web search,
+            subagents, and advanced permissions.
           </li>
           <li>
             The Context panel shows status, project path, active flags, detected MCP servers, and
