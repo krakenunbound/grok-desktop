@@ -9,6 +9,7 @@ commands.allow = [
   "get_app_data_dir",
   "get_privacy_audit",
   "apply_grok_privacy_config",
+  "set_coding_data_retention",
   "export_privacy_report",
   "archive_and_clear_grok_logs",
   "assess_project_path",

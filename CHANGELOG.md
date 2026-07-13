@@ -2,6 +2,17 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## 0.6.1 - 2026-07-13
+
+### Added
+
+- In-app Zero Data Retention control backed by Grok Build's `/privacy opt-out` and `/privacy opt-in` commands.
+- Direction-specific typed confirmation warnings: opting out explains that previously synced data is deleted; opting in warns that future code and trace data may be retained again.
+
+### Security
+
+- Data-retention changes require an exact, direction-specific confirmation phrase in both the interface and backend, and are blocked while other Grok tasks are active.
+
 ## 0.6.0 - 2026-07-13
 
 ### Added

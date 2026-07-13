@@ -236,6 +236,7 @@ pub fn run() {
             commands::get_app_data_dir,
             commands::get_privacy_audit,
             commands::apply_grok_privacy_config,
+            commands::set_coding_data_retention,
             commands::export_privacy_report,
             commands::archive_and_clear_grok_logs,
             commands::assess_project_path,

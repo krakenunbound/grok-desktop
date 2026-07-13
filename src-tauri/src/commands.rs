@@ -119,6 +119,21 @@ pub fn apply_grok_privacy_config() -> Result<PrivacyAudit, String> {
 }
 
 #[tauri::command]
+pub async fn set_coding_data_retention(
+    manager: State<'_, GrokManager>,
+    agents: State<'_, AgentRunManager>,
+    opt_out: bool,
+    confirmation: String,
+) -> Result<PrivacyAudit, String> {
+    if grok_process::is_running(manager.inner()).await || agents.active_count().await > 0 {
+        return Err("Stop all Grok and agent tasks before changing data retention".into());
+    }
+    let settings = config::load_settings();
+    privacy::set_coding_data_retention(&settings.grok_binary, opt_out, &confirmation).await?;
+    Ok(privacy::audit(settings.privacy_guard_enabled))
+}
+
+#[tauri::command]
 pub fn export_privacy_report(destination: String) -> Result<(), String> {
     let settings = config::load_settings();
     privacy::export_report(&destination, settings.privacy_guard_enabled)

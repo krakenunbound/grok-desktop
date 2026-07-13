@@ -27,7 +27,9 @@ Chat history is plaintext. Treat the local machine as trusted and avoid attachin
 - Privacy Guard adds telemetry-off environment settings to app-launched Grok tasks and stops the contained process tree if Grok records a repository-state upload event.
 - Persistent CLI config hardening creates a timestamped backup before changing `~/.grok/config.toml`.
 
-Privacy Guard is defense in depth around the installed Grok Build CLI. It cannot retroactively delete remote data or guarantee the behavior of third-party binaries. Review account retention with `/privacy` in Grok Build and use the xAI privacy-request portal for remote access or deletion requests.
+Privacy Guard is defense in depth around the installed Grok Build CLI and cannot guarantee the behavior of third-party binaries. Account-level Zero Data Retention is a separate xAI setting managed through Grok Build's `/privacy` flow.
+
+The Privacy Center can invoke Grok Build's supported `/privacy` flow directly. Enabling Zero Data Retention warns that xAI deletes previously synced data; disabling it warns that future code and traces may be retained again. Each direction requires its own exact typed confirmation phrase, which is checked again by the Rust backend before Grok is launched.
 
 ## Reporting
 

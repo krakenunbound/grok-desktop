@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::Duration;
 use toml_edit::{value, DocumentMut};
 
 const UPLOAD_START: &str = "repo_state.upload.start";
@@ -86,6 +88,76 @@ fn account_retention_opt_out() -> Option<bool> {
             .get("coding_data_retention_opt_out")
             .and_then(Value::as_bool)
     })
+}
+
+fn expected_retention_confirmation(opt_out: bool) -> &'static str {
+    if opt_out {
+        "DELETE PREVIOUSLY SYNCED DATA"
+    } else {
+        "ALLOW FUTURE DATA RETENTION"
+    }
+}
+
+pub async fn set_coding_data_retention(
+    grok_binary_override: &str,
+    opt_out: bool,
+    confirmation: &str,
+) -> Result<(), String> {
+    if confirmation != expected_retention_confirmation(opt_out) {
+        return Err("Data-retention confirmation did not match".into());
+    }
+    if account_retention_opt_out() == Some(opt_out) {
+        return Ok(());
+    }
+
+    let binary = crate::grok_process::resolve_grok_binary(grok_binary_override)?;
+    let slash_command = if opt_out {
+        "/privacy opt-out"
+    } else {
+        "/privacy opt-in"
+    };
+    let mut command = tokio::process::Command::new(binary);
+    command
+        .arg("--no-alt-screen")
+        .arg(slash_command)
+        .current_dir(dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    apply_process_guard(&mut command);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Start Grok privacy command: {error}"))?;
+    let process_id = child
+        .id()
+        .ok_or_else(|| "Grok privacy command did not expose a process ID".to_string())?;
+    let job = crate::grok_process::create_kill_on_close_job(process_id)?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let result = loop {
+        if account_retention_opt_out() == Some(opt_out) {
+            break Ok(());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break Err(format!("Grok privacy command exited with {status}")),
+            Ok(None) => {}
+            Err(error) => break Err(format!("Check Grok privacy command: {error}")),
+        }
+        if tokio::time::Instant::now() >= deadline {
+            break Err("Grok did not confirm the data-retention change within 30 seconds".into());
+        }
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    };
+    crate::grok_process::close_job(job);
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    result
 }
 
 fn config_privacy_state() -> (bool, bool) {
@@ -374,7 +446,7 @@ pub fn apply_process_guard(command: &mut tokio::process::Command) {
 
 #[cfg(test)]
 mod tests {
-    use super::{assess_project_path, upload_started_in_file};
+    use super::{assess_project_path, expected_retention_confirmation, upload_started_in_file};
     use std::fs;
     use std::io::Write;
 
@@ -429,5 +501,17 @@ mod tests {
         drop(file);
         assert!(!upload_started_in_file(&path, &mut cursor));
         fs::remove_file(path).expect("remove test log");
+    }
+
+    #[test]
+    fn retention_changes_require_explicit_directional_confirmation() {
+        assert_eq!(
+            expected_retention_confirmation(true),
+            "DELETE PREVIOUSLY SYNCED DATA"
+        );
+        assert_eq!(
+            expected_retention_confirmation(false),
+            "ALLOW FUTURE DATA RETENTION"
+        );
     }
 }

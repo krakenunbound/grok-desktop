@@ -2,7 +2,7 @@
 
 Lightweight desktop GUI for the **Grok Build** CLI — Codex-inspired dark UI, project workspaces, explicit reasoning/access controls, rich file drop, system tray, chat history, and Grok CLI context visibility.
 
-**Current version:** 0.6.0
+**Current version:** 0.6.1
 
 **Stack:** Tauri 2 (Rust) + Svelte 5 (SvelteKit SPA)  
 **Platforms:** Windows 10/11, Linux, and macOS
@@ -13,7 +13,7 @@ Windows is the primary tested platform. Linux packages are built natively on Ubu
 
 ## Screenshots
 
-![Grok Desktop 0.6.0 main window](docs/screenshots/main-window-v0.6.0.jpg)
+![Grok Desktop 0.6.1 main window](docs/screenshots/main-window-v0.6.1.jpg)
 
 More screenshots: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)
 
@@ -127,7 +127,7 @@ npm run build
 | Search             | Filter projects and chats from one sidebar field; `Ctrl+K` focuses it                                                               |
 | Transcript tools   | Export any chat as Markdown; copy answers or code blocks; retry prior user messages                                                 |
 | Parallel agents    | Discover built-in, project, user, and plugin agents; create `.grok/agents` definitions; dispatch up to eight tabbed background runs |
-| Privacy Center     | Audit upload evidence, protect app-launched tasks, harden CLI config, export reports, and archive or clear local logs               |
+| Privacy Center     | Manage Zero Data Retention, audit uploads, protect tasks, harden CLI config, export reports, and archive or clear local logs        |
 | CLI Context        | Context panel shows Grok CLI capabilities, recent CLI sessions, tracked worktrees, MCP servers, and plugins                         |
 | Updates            | Checks GitHub Releases quietly at startup and every six hours; signed updates install only after user confirmation                  |
 | Tray               | Show/hide, New Chat, Toggle YOLO, Quit                                                                                              |

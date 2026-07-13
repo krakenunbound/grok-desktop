@@ -12,11 +12,18 @@
   let busy = $state(false);
   let message = $state("");
   let error = $state("");
+  let retentionIntent = $state<boolean | null>(null);
+  let retentionPhrase = $state("");
+  let requiredRetentionPhrase = $derived(
+    retentionIntent === true ? "DELETE PREVIOUSLY SYNCED DATA" : "ALLOW FUTURE DATA RETENTION",
+  );
 
   $effect(() => {
     if (open) {
       message = "";
       error = "";
+      retentionIntent = null;
+      retentionPhrase = "";
       void refresh();
     }
   });
@@ -56,6 +63,29 @@
       await refresh();
     } catch (cause) {
       error = String(cause);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function changeDataRetention(optOut: boolean) {
+    busy = true;
+    error = "";
+    message = "";
+    try {
+      await invoke("set_coding_data_retention", {
+        optOut,
+        confirmation: retentionPhrase,
+      });
+      retentionIntent = null;
+      retentionPhrase = "";
+      message = optOut
+        ? "Zero Data Retention is enabled. Grok reports that previously synced data is deleted."
+        : "Zero Data Retention is disabled. Future Grok Build data may be retained.";
+      await refresh();
+    } catch (cause) {
+      error = String(cause);
+      await refresh();
     } finally {
       busy = false;
     }
@@ -128,7 +158,14 @@
 
 <svelte:window
   onkeydown={(event) => {
-    if (open && event.key === "Escape") onclose();
+    if (open && event.key === "Escape") {
+      if (retentionIntent !== null) {
+        retentionIntent = null;
+        retentionPhrase = "";
+      } else {
+        onclose();
+      }
+    }
   }}
 />
 
@@ -186,9 +223,22 @@
                   ? "Not opted out"
                   : "Unknown"}
             </strong>
-            <small
-              >Use <code>/privacy</code> in Grok Build to review or change this server-side setting.</small
-            >
+            <small>Manage Grok Build's server-side <code>/privacy</code> setting here.</small>
+            {#if $privacyAudit.account_retention_opt_out !== null}
+              <button
+                type="button"
+                class="retention-action"
+                disabled={busy}
+                onclick={() => {
+                  retentionIntent = $privacyAudit?.account_retention_opt_out !== true;
+                  retentionPhrase = "";
+                }}
+              >
+                {$privacyAudit.account_retention_opt_out
+                  ? "Disable zero data retention"
+                  : "Enable zero data retention"}
+              </button>
+            {/if}
           </article>
           <article>
             <span>Logged upload volume</span>
@@ -265,9 +315,45 @@
         </section>
 
         <p class="warning">
-          Clearing this computer's log does not remove remote data. Use the xAI privacy-request
-          portal for access or deletion requests.
+          Clearing this computer's log does not remove remote data. Enabling Zero Data Retention
+          above instructs Grok to delete previously synced data; the xAI privacy portal remains
+          available for formal access or deletion requests.
         </p>
+
+        {#if retentionIntent !== null}
+          <section class="retention-confirm" aria-labelledby="retention-title">
+            <h3 id="retention-title">
+              {retentionIntent ? "Enable Zero Data Retention" : "Disable Zero Data Retention"}
+            </h3>
+            <p>
+              {retentionIntent
+                ? "xAI states that enabling this setting prevents future code and trace retention and deletes all previously synced data. That deletion cannot be undone."
+                : "Future code, prompts, responses, and trace data may be retained by xAI again. Previously deleted synced data will not be restored."}
+            </p>
+            <label>
+              Type <strong>{requiredRetentionPhrase}</strong> to continue.
+              <input type="text" autocomplete="off" bind:value={retentionPhrase} disabled={busy} />
+            </label>
+            <div>
+              <button
+                type="button"
+                onclick={() => {
+                  retentionIntent = null;
+                  retentionPhrase = "";
+                }}
+                disabled={busy}>Cancel</button
+              >
+              <button
+                type="button"
+                class="danger-action"
+                disabled={busy || retentionPhrase !== requiredRetentionPhrase}
+                onclick={() => changeDataRetention(retentionIntent === true)}
+              >
+                {retentionIntent ? "Delete synced data and enable ZDR" : "Disable ZDR"}
+              </button>
+            </div>
+          </section>
+        {/if}
       {:else}
         <div class="loading">
           {busy ? "Auditing Grok privacy state…" : "Privacy audit unavailable."}
@@ -394,6 +480,12 @@
   article strong {
     overflow-wrap: anywhere;
   }
+  .retention-action {
+    margin-top: 0.25rem;
+    border-color: #8b463f;
+    color: #ffc39d;
+    font-size: 0.72rem;
+  }
   section {
     display: grid;
     gap: 0.55rem;
@@ -464,6 +556,39 @@
   .warning {
     color: #ffb38a;
     padding: 0.2rem 0.35rem;
+  }
+  .retention-confirm {
+    border-color: #9a4e43;
+    background: rgba(154, 78, 67, 0.1);
+  }
+  .retention-confirm label {
+    display: grid;
+    gap: 0.4rem;
+    color: var(--text);
+    font-size: 0.78rem;
+  }
+  .retention-confirm input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #9a4e43;
+    border-radius: 8px;
+    padding: 0.55rem 0.65rem;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+  }
+  .retention-confirm input:focus {
+    outline: 2px solid rgba(255, 179, 138, 0.35);
+    outline-offset: 1px;
+  }
+  .retention-confirm > div {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+  button.danger-action {
+    border-color: #b75a4d;
+    color: #ffc0b6;
   }
   .message,
   .error {

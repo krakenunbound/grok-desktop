@@ -567,7 +567,7 @@
       }}
     >
       <span aria-hidden="true">☰</span>
-      {#if !collapsed}<span>Menu</span><small>v0.6.0</small>{/if}
+      {#if !collapsed}<span>Menu</span><small>v0.6.1</small>{/if}
     </button>
   </div>
 </aside>

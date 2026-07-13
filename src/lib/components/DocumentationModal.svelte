@@ -129,7 +129,8 @@
           </li>
           <li>
             Export an audit report or archive and clear the local log. Local clearing does not
-            delete data already held by xAI; use the linked privacy-request portal for that.
+            delete data already held by xAI. Use the account-retention control to enable Zero Data
+            Retention; xAI states that opting out also deletes previously synced data.
           </li>
           <li>Broad project folders such as a home directory trigger a warning before opening.</li>
         </ul>

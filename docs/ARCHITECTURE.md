@@ -66,6 +66,8 @@ The Tauri updater checks the latest GitHub Release after startup, then every six
 
 Privacy Guard applies telemetry-off environment variables to chat and parallel-agent processes. It tails Grok's local unified log from the task's start position; if a repository-state upload event appears, the app terminates the contained Grok process tree and raises a visible privacy alert. The Privacy Center audits historical local evidence, can write equivalent persistent CLI settings after creating a backup, and warns before unusually broad project roots are opened.
 
+Account-level retention changes use Grok Build's own `/privacy opt-out` and `/privacy opt-in` flows in a hidden, contained CLI process. The UI and backend require an exact direction-specific typed confirmation, wait for Grok's authenticated account cache to report the requested state, and terminate the helper process on success or timeout.
+
 ## App Data
 
 The app writes user data under `%APPDATA%\com.the-kraken.grok-desktop\`:
