@@ -15,6 +15,12 @@
   let busy = $state(false);
   let error = $state("");
 
+  interface ProjectPathRisk {
+    risky: boolean;
+    severity: string;
+    reason: string;
+  }
+
   $effect(() => {
     if (visible) {
       view = "choose";
@@ -60,6 +66,15 @@
     busy = true;
     error = "";
     try {
+      const risk = await invoke<ProjectPathRisk>("assess_project_path", { path });
+      if (
+        risk.risky &&
+        !window.confirm(
+          `${risk.severity === "critical" ? "High-risk project folder" : "Sensitive project folder"}\n\n${risk.reason}\n\nUse this folder anyway?`,
+        )
+      ) {
+        return;
+      }
       await onselect(path);
       onclose();
     } catch (cause) {

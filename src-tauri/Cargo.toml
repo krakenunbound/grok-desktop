@@ -1,6 +1,6 @@
 [package]
 name = "grok-desktop"
-version = "0.5.0"
+version = "0.6.0"
 description = "Lightweight desktop GUI for Grok Build CLI"
 authors = ["The Kraken"]
 edition = "2021"

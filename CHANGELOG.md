@@ -2,6 +2,24 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## 0.6.0 - 2026-07-13
+
+### Added
+
+- Privacy Center for reviewing local repository-upload evidence, account retention status, and Grok CLI privacy configuration.
+- Privacy Guard for app-launched chats and agents, including telemetry-off process settings and immediate termination when Grok records a repository-state upload attempt.
+- Privacy audit export plus archive-before-clear controls for Grok's local unified log.
+- Broad and sensitive project-folder warnings before a project is opened.
+
+### Security
+
+- Grok config hardening creates a timestamped backup before disabling telemetry, trace uploads, and Mixpanel.
+- Local log clearing is blocked while Grok Desktop tasks are active and distinguishes local cleanup from remote deletion requests.
+
+### Changed
+
+- Replaced the crowded top-bar action row with a conventional bottom-left application menu for agents, privacy, context, output visibility, updates, documentation, and settings.
+
 ## 0.5.0 - 2026-07-13
 
 ### Added

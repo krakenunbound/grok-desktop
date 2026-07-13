@@ -34,6 +34,7 @@
         <a href="#projects">Projects</a>
         <a href="#chat">Chat</a>
         <a href="#agents">Agents</a>
+        <a href="#privacy">Privacy</a>
         <a href="#settings">Settings</a>
         <a href="#troubleshooting">Troubleshooting</a>
         <a href="#roadmap">Roadmap</a>
@@ -108,6 +109,29 @@
             Each turn currently launches a headless Grok CLI process with
             <code>--output-format plain</code> and continues prior context when possible.
           </li>
+        </ul>
+      </section>
+
+      <section id="privacy">
+        <h3>Privacy Center</h3>
+        <ul>
+          <li>
+            Open <strong>Menu → Privacy Center</strong> at the bottom of the sidebar to audit repository-upload
+            evidence stored in Grok's local log and review the account retention status reported by Grok.
+          </li>
+          <li>
+            Privacy Guard adds telemetry-off environment settings to every app-launched Grok task
+            and stops the task if a repository upload event appears while it is running.
+          </li>
+          <li>
+            <strong>Protect Grok CLI config</strong> creates a timestamped backup and disables
+            telemetry, trace uploads, and Mixpanel in <code>~/.grok/config.toml</code>.
+          </li>
+          <li>
+            Export an audit report or archive and clear the local log. Local clearing does not
+            delete data already held by xAI; use the linked privacy-request portal for that.
+          </li>
+          <li>Broad project folders such as a home directory trigger a warning before opening.</li>
         </ul>
       </section>
 

@@ -68,6 +68,10 @@ impl AgentRunManager {
             runs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
+
+    pub async fn active_count(&self) -> usize {
+        self.runs.lock().await.len()
+    }
 }
 
 impl Default for AgentRunManager {
@@ -301,6 +305,10 @@ pub async fn start_run(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    if settings.privacy_guard_enabled {
+        crate::privacy::apply_process_guard(&mut command);
+    }
+    let mut privacy_cursor = crate::privacy::upload_log_cursor();
     #[cfg(windows)]
     {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -378,10 +386,34 @@ pub async fn start_run(
     let wait_app = app.clone();
     let wait_id = id.clone();
     let runs = manager.runs.clone();
+    let privacy_guard_enabled = settings.privacy_guard_enabled;
     tokio::spawn(async move {
+        let mut privacy_check = std::time::Instant::now();
         let exit_code = loop {
             if runtime.cancel.load(Ordering::SeqCst) {
                 break -1;
+            }
+            if privacy_guard_enabled
+                && privacy_check.elapsed() >= std::time::Duration::from_millis(200)
+            {
+                privacy_check = std::time::Instant::now();
+                if crate::privacy::upload_started_since(&mut privacy_cursor) {
+                    runtime.cancel.store(true, Ordering::SeqCst);
+                    let _ = wait_app.emit(
+                        "privacy-alert",
+                        serde_json::json!({
+                            "message": "Privacy Guard stopped an agent after detecting a repository-state upload event.",
+                            "run_id": wait_id,
+                        }),
+                    );
+                    if let Some(job) = runtime.job.lock().await.take() {
+                        grok_process::close_job(job);
+                    }
+                    if let Some(child) = runtime.child.lock().await.as_mut() {
+                        let _ = child.kill().await;
+                    }
+                    break -1;
+                }
             }
             let mut child = runtime.child.lock().await;
             match child.as_mut().map(Child::try_wait) {

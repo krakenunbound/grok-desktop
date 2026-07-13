@@ -4,7 +4,7 @@ Screenshots are captured from the release build and stored in `docs/screenshots/
 
 ## Main Window
 
-![Grok Desktop main window](screenshots/main-window-v0.5.0.png)
+![Grok Desktop 0.6.0 main window](screenshots/main-window-v0.6.0.jpg)
 
 ## New Project
 

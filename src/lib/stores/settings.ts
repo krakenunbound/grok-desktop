@@ -32,6 +32,7 @@ export interface AppSettings {
   deny_rules: string;
   extra_rules: string;
   max_turns: string;
+  privacy_guard_enabled: boolean;
 }
 
 export const defaultSettings = (): AppSettings => ({
@@ -56,6 +57,7 @@ export const defaultSettings = (): AppSettings => ({
   deny_rules: "",
   extra_rules: "",
   max_turns: "",
+  privacy_guard_enabled: true,
 });
 
 function normalizeSettings(s: Partial<AppSettings>): AppSettings {
@@ -67,6 +69,7 @@ function normalizeSettings(s: Partial<AppSettings>): AppSettings {
     disable_web_search: !!s.disable_web_search,
     subagents_enabled: s.subagents_enabled !== false,
     memory_enabled: !!s.memory_enabled,
+    privacy_guard_enabled: s.privacy_guard_enabled !== false,
     reasoning_effort: ["low", "medium", "high"].includes(s.reasoning_effort || "")
       ? (s.reasoning_effort as ReasoningEffort)
       : "high",

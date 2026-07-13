@@ -3,13 +3,12 @@
   import { invoke } from "@tauri-apps/api/core";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import ChatArea from "$lib/components/ChatArea.svelte";
-  import VerboseToggle from "$lib/components/VerboseToggle.svelte";
   import SettingsModal from "$lib/components/SettingsModal.svelte";
   import DocumentationModal from "$lib/components/DocumentationModal.svelte";
   import UsageMeter from "$lib/components/UsageMeter.svelte";
   import RightPanel from "$lib/components/RightPanel.svelte";
   import AgentsWorkspace from "$lib/components/AgentsWorkspace.svelte";
-  import UpdateControl from "$lib/components/UpdateControl.svelte";
+  import PrivacyCenter from "$lib/components/PrivacyCenter.svelte";
   import { agentRuns, bindAgentEvents } from "$lib/stores/agents";
   import { get } from "svelte/store";
   import {
@@ -29,16 +28,31 @@
   import { loadSettings, loadModels, settings, persistSettings } from "$lib/stores/settings";
   import { loadProjects, activeProjectId, projects } from "$lib/stores/projects";
   import { bindLaunchStatus, reportUiReady, launchStatus } from "$lib/stores/launch";
+  import {
+    bindPrivacyEvents,
+    loadPrivacyAudit,
+    privacyAlert,
+    privacyAudit,
+  } from "$lib/stores/privacy";
 
   let sidebarCollapsed = $state(false);
   let rightOpen = $state(false);
   let settingsOpen = $state(false);
   let docsOpen = $state(false);
   let agentsOpen = $state(false);
+  let privacyOpen = $state(false);
   let ready = $state(false);
   let bootPhase = $state("Starting Grok Desktop…");
   let bootError = $state<string | null>(null);
   let workspaceCwd = $state(".");
+
+  $effect(() => {
+    if ($privacyAlert) {
+      privacyOpen = true;
+      errorToast.set($privacyAlert.message);
+      privacyAlert.set(null);
+    }
+  });
 
   onMount(() => {
     // Mark JS alive ASAP so a slow boot is not mis-reported as "dead port 1420".
@@ -89,11 +103,13 @@
       bootPhase = "Binding chat events…";
       await bindGrokEvents();
       await bindAgentEvents();
+      await bindPrivacyEvents();
 
       bootPhase = "Loading settings…";
       const s = await loadSettings();
       await loadModels();
       await loadProjects();
+      await loadPrivacyAudit();
 
       sidebarCollapsed = s.sidebar_collapsed;
       rightOpen = s.right_panel_open;
@@ -234,55 +250,27 @@
   </div>
 {:else}
   <div class="shell">
-    <Sidebar collapsed={sidebarCollapsed} ontoggle={toggleSidebar} />
+    <Sidebar
+      collapsed={sidebarCollapsed}
+      ontoggle={toggleSidebar}
+      {rightOpen}
+      privacyProtected={$privacyAudit?.guard_enabled ?? false}
+      privacyWarning={$privacyAudit?.account_retention_opt_out === false}
+      runningAgents={$agentRuns.filter((run) => run.status === "running").length}
+      onagents={() => (agentsOpen = true)}
+      onprivacy={() => (privacyOpen = true)}
+      oncontext={toggleRight}
+      ondocs={() => (docsOpen = true)}
+      onsettings={() => (settingsOpen = true)}
+    />
 
     <div class="main">
       <header class="topbar">
         <div class="left">
-          <h1 class="title">Grok Desktop <span class="version">v0.5.0</span></h1>
+          <h1 class="title">Grok Desktop <span class="version">v0.6.0</span></h1>
         </div>
         <div class="right" role="toolbar" aria-label="Session controls">
           <UsageMeter />
-          <UpdateControl />
-          <VerboseToggle />
-          <button
-            type="button"
-            class="tb agent-button"
-            onclick={() => (agentsOpen = true)}
-            title="Parallel agents (Ctrl+Shift+A)"
-          >
-            Agents
-            {#if $agentRuns.some((run) => run.status === "running")}
-              <span class="agent-count"
-                >{$agentRuns.filter((run) => run.status === "running").length}</span
-              >
-            {/if}
-          </button>
-          <button
-            type="button"
-            class="tb"
-            onclick={toggleRight}
-            title="Context panel"
-            aria-pressed={rightOpen}
-          >
-            {rightOpen ? "Hide context" : "Context"}
-          </button>
-          <button
-            type="button"
-            class="tb"
-            onclick={() => (docsOpen = true)}
-            title="Documentation (F1)"
-          >
-            Docs
-          </button>
-          <button
-            type="button"
-            class="tb"
-            onclick={() => (settingsOpen = true)}
-            title="Settings (Ctrl+,)"
-          >
-            Settings
-          </button>
         </div>
       </header>
       <ChatArea />
@@ -298,6 +286,7 @@
     fallbackCwd={workspaceCwd}
     onclose={() => (agentsOpen = false)}
   />
+  <PrivacyCenter open={privacyOpen} onclose={() => (privacyOpen = false)} />
 
   {#if $errorToast}
     <div class="toast" role="alert" aria-live="assertive">{$errorToast}</div>
@@ -401,34 +390,5 @@
     gap: 0.5rem;
     flex-wrap: wrap;
     justify-content: flex-end;
-  }
-  .tb {
-    border: 1px solid var(--border);
-    background: var(--surface-2);
-    color: var(--text);
-    border-radius: 8px;
-    padding: 0.35rem 0.7rem;
-    font-size: 0.82rem;
-    cursor: pointer;
-    font-family: inherit;
-  }
-  .agent-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-  .agent-count {
-    min-width: 1.1rem;
-    height: 1.1rem;
-    display: inline-grid;
-    place-items: center;
-    border-radius: 999px;
-    background: var(--accent);
-    color: var(--accent-contrast);
-    font-size: 0.65rem;
-    font-weight: 800;
-  }
-  .tb:hover {
-    border-color: var(--accent-dim);
   }
 </style>

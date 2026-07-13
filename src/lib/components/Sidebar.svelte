@@ -29,12 +29,35 @@
   import { invoke } from "@tauri-apps/api/core";
   import { save as saveDialog } from "@tauri-apps/plugin-dialog";
   import ProjectDialog from "$lib/components/ProjectDialog.svelte";
+  import UpdateControl from "$lib/components/UpdateControl.svelte";
+  import VerboseToggle from "$lib/components/VerboseToggle.svelte";
 
   interface Props {
     collapsed: boolean;
     ontoggle: () => void;
+    rightOpen: boolean;
+    privacyProtected: boolean;
+    privacyWarning: boolean;
+    runningAgents: number;
+    onagents: () => void;
+    onprivacy: () => void;
+    oncontext: () => void;
+    ondocs: () => void;
+    onsettings: () => void;
   }
-  let { collapsed, ontoggle }: Props = $props();
+  let {
+    collapsed,
+    ontoggle,
+    rightOpen,
+    privacyProtected,
+    privacyWarning,
+    runningAgents,
+    onagents,
+    onprivacy,
+    oncontext,
+    ondocs,
+    onsettings,
+  }: Props = $props();
 
   let expandedNotes = $state<Record<string, boolean>>({});
   let openProjectMenu = $state<string | null>(null);
@@ -43,6 +66,7 @@
   let searchQuery = $state("");
   let searchInput = $state<HTMLInputElement>();
   let projectDialogOpen = $state(false);
+  let appMenuOpen = $state(false);
   let normalizedQuery = $derived(searchQuery.trim().toLowerCase());
   let filteredPinnedProjects = $derived(
     $pinnedProjects.filter((project) => matchesProject(project)),
@@ -234,6 +258,7 @@
   onclick={() => {
     openProjectMenu = null;
     openChatMenu = null;
+    appMenuOpen = false;
   }}
   onkeydown={(event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -244,6 +269,7 @@
     if (event.key === "Escape") {
       openProjectMenu = null;
       openChatMenu = null;
+      appMenuOpen = false;
       if (document.activeElement === searchInput && searchQuery) searchQuery = "";
     }
   }}
@@ -490,6 +516,60 @@
       {/each}
     </div>
   {/if}
+
+  <div class="app-menu">
+    {#if appMenuOpen}
+      <div class="app-menu-popover" role="menu" aria-label="Grok Desktop menu">
+        <button type="button" role="menuitem" onclick={() => ((appMenuOpen = false), onagents())}>
+          <span aria-hidden="true">✦</span>
+          <span>Parallel agents</span>
+          {#if runningAgents > 0}<small>{runningAgents} running</small>{/if}
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          class:protected={privacyProtected}
+          class:warning={privacyWarning}
+          onclick={() => ((appMenuOpen = false), onprivacy())}
+        >
+          <span aria-hidden="true">{privacyProtected ? "◆" : "◇"}</span>
+          <span>Privacy Center</span>
+          <small>{privacyProtected ? "Guard on" : "Guard off"}</small>
+        </button>
+        <button type="button" role="menuitem" onclick={() => ((appMenuOpen = false), oncontext())}>
+          <span aria-hidden="true">▤</span>
+          <span>{rightOpen ? "Hide context" : "Show context"}</span>
+        </button>
+        <div class="component-action" role="presentation"><VerboseToggle /></div>
+        <div class="component-action" role="presentation"><UpdateControl /></div>
+        <button type="button" role="menuitem" onclick={() => ((appMenuOpen = false), ondocs())}>
+          <span aria-hidden="true">?</span>
+          <span>Documentation</span>
+          <small>F1</small>
+        </button>
+        <button type="button" role="menuitem" onclick={() => ((appMenuOpen = false), onsettings())}>
+          <span aria-hidden="true">⚙</span>
+          <span>Settings</span>
+          <small>Ctrl+,</small>
+        </button>
+      </div>
+    {/if}
+    <button
+      type="button"
+      class="app-menu-trigger"
+      aria-label="Open Grok Desktop menu"
+      aria-haspopup="menu"
+      aria-expanded={appMenuOpen}
+      title="Grok Desktop menu"
+      onclick={(event) => {
+        event.stopPropagation();
+        appMenuOpen = !appMenuOpen;
+      }}
+    >
+      <span aria-hidden="true">☰</span>
+      {#if !collapsed}<span>Menu</span><small>v0.6.0</small>{/if}
+    </button>
+  </div>
 </aside>
 
 <ProjectDialog
@@ -517,6 +597,100 @@
     width: 48px;
     min-width: 48px;
     align-items: center;
+  }
+  .app-menu {
+    position: relative;
+    margin-top: auto;
+    flex: 0 0 auto;
+  }
+  .app-menu-trigger {
+    width: 100%;
+    min-height: 36px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.55rem;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0.45rem 0.6rem;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .collapsed .app-menu-trigger {
+    width: 32px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+  }
+  .app-menu-trigger:hover,
+  .app-menu-trigger[aria-expanded="true"] {
+    color: var(--text);
+    background: var(--surface-2);
+    border-color: var(--border);
+  }
+  .app-menu-trigger small,
+  .app-menu-popover small {
+    font-size: 0.67rem;
+    color: var(--muted);
+  }
+  .app-menu-popover {
+    position: absolute;
+    bottom: calc(100% + 0.45rem);
+    left: 0;
+    z-index: 20;
+    width: 250px;
+    display: grid;
+    gap: 0.15rem;
+    padding: 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--surface);
+    box-shadow: 0 16px 42px rgba(0, 0, 0, 0.5);
+  }
+  .app-menu-popover > button {
+    display: grid;
+    grid-template-columns: 20px 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 36px;
+    border: none;
+    border-radius: 7px;
+    padding: 0.45rem 0.55rem;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 0.78rem;
+    text-align: left;
+    cursor: pointer;
+  }
+  .app-menu-popover > button:hover,
+  .app-menu-popover > button:focus-visible {
+    background: var(--surface-2);
+    outline: none;
+  }
+  .app-menu-popover button.protected {
+    color: var(--accent);
+  }
+  .app-menu-popover button.warning {
+    color: #ffb38a;
+  }
+  .component-action :global(button) {
+    width: 100%;
+    min-height: 36px;
+    border: none;
+    background: transparent;
+    border-radius: 7px;
+    justify-content: flex-start;
+    padding: 0.45rem 0.55rem 0.45rem 2.55rem;
+    font-size: 0.78rem;
+  }
+  .component-action :global(button:hover),
+  .component-action :global(button:focus-visible) {
+    background: var(--surface-2);
+    outline: none;
   }
   .head {
     display: flex;

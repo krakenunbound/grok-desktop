@@ -485,6 +485,10 @@ pub async fn send_message(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    if advanced.privacy_guard_enabled {
+        crate::privacy::apply_process_guard(&mut command);
+    }
+    let mut privacy_cursor = crate::privacy::upload_log_cursor();
 
     // On Windows, avoid flashing a console window for the child.
     #[cfg(windows)]
@@ -589,9 +593,34 @@ pub async fn send_message(
     });
 
     // Poll for exit so stop_session can acquire the child lock and kill.
+    let mut privacy_blocked = false;
+    let mut privacy_check = std::time::Instant::now();
     let exit_code = loop {
         if cancel.load(Ordering::SeqCst) {
             break -1;
+        }
+        if advanced.privacy_guard_enabled
+            && privacy_check.elapsed() >= std::time::Duration::from_millis(200)
+        {
+            privacy_check = std::time::Instant::now();
+            if crate::privacy::upload_started_since(&mut privacy_cursor) {
+                privacy_blocked = true;
+                cancel.store(true, Ordering::SeqCst);
+                let _ = app.emit(
+                    "privacy-alert",
+                    serde_json::json!({
+                        "message": "Privacy Guard stopped Grok after detecting a repository-state upload event.",
+                        "cwd": cfg.cwd,
+                    }),
+                );
+                if let Some(job) = manager.job.lock().await.take() {
+                    close_job(job);
+                }
+                if let Some(child) = manager.child.lock().await.as_mut() {
+                    let _ = child.kill().await;
+                }
+                break -1;
+            }
         }
         let mut child_guard = manager.child.lock().await;
         if let Some(child) = child_guard.as_mut() {
@@ -644,20 +673,25 @@ pub async fn send_message(
             "exit_code": exit_code,
             "cancelled": cancelled,
             "success": success,
+            "privacy_blocked": privacy_blocked,
         }),
     );
 
     emit_status(
         &app,
         GrokStatus {
-            state: if cancelled {
+            state: if privacy_blocked {
+                "error".into()
+            } else if cancelled {
                 "cancelled".into()
             } else if success {
                 "ready".into()
             } else {
                 "error".into()
             },
-            detail: if cancelled {
+            detail: if privacy_blocked {
+                "Blocked repository upload".into()
+            } else if cancelled {
                 "Cancelled".into()
             } else if success {
                 "Done".into()
@@ -670,6 +704,9 @@ pub async fn send_message(
         },
     );
 
+    if privacy_blocked {
+        return Err("Privacy Guard stopped Grok after detecting a repository-state upload".into());
+    }
     if cancelled {
         return Err("Cancelled".into());
     }

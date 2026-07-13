@@ -9,6 +9,7 @@ use crate::grok_cli::{self, GrokCliOverview};
 use crate::grok_process::{self, GrokManager, GrokStatus, SessionConfig};
 use crate::image_handler::{self, SavedImage};
 use crate::launch_status::{self, LaunchStatus, LaunchStatusSnapshot};
+use crate::privacy::{self, PrivacyAudit, ProjectPathRisk};
 use crate::usage::{self, UsageSnapshot};
 use chrono::Utc;
 use serde::Serialize;
@@ -102,6 +103,42 @@ pub fn get_models() -> ModelsResponse {
 #[tauri::command]
 pub fn get_app_data_dir() -> Result<String, String> {
     Ok(config::app_data_dir()?.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn get_privacy_audit() -> PrivacyAudit {
+    let settings = config::load_settings();
+    privacy::audit(settings.privacy_guard_enabled)
+}
+
+#[tauri::command]
+pub fn apply_grok_privacy_config() -> Result<PrivacyAudit, String> {
+    privacy::apply_grok_config_protection()?;
+    let settings = config::load_settings();
+    Ok(privacy::audit(settings.privacy_guard_enabled))
+}
+
+#[tauri::command]
+pub fn export_privacy_report(destination: String) -> Result<(), String> {
+    let settings = config::load_settings();
+    privacy::export_report(&destination, settings.privacy_guard_enabled)
+}
+
+#[tauri::command]
+pub async fn archive_and_clear_grok_logs(
+    manager: State<'_, GrokManager>,
+    agents: State<'_, AgentRunManager>,
+    confirmation: String,
+) -> Result<String, String> {
+    if grok_process::is_running(manager.inner()).await || agents.active_count().await > 0 {
+        return Err("Stop all Grok and agent tasks before clearing logs".into());
+    }
+    privacy::archive_and_clear_logs(&confirmation).map(|path| path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn assess_project_path(path: String) -> Result<ProjectPathRisk, String> {
+    privacy::assess_project_path(&path)
 }
 
 #[tauri::command]

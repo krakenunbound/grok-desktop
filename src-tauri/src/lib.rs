@@ -8,6 +8,7 @@ mod grok_cli;
 mod grok_process;
 mod image_handler;
 mod launch_status;
+mod privacy;
 mod tray;
 mod usage;
 
@@ -233,6 +234,11 @@ pub fn run() {
             commands::save_settings,
             commands::get_models,
             commands::get_app_data_dir,
+            commands::get_privacy_audit,
+            commands::apply_grok_privacy_config,
+            commands::export_privacy_report,
+            commands::archive_and_clear_grok_logs,
+            commands::assess_project_path,
             commands::list_projects,
             commands::add_project,
             commands::create_project_folder,

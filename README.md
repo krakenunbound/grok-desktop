@@ -2,7 +2,7 @@
 
 Lightweight desktop GUI for the **Grok Build** CLI — Codex-inspired dark UI, project workspaces, explicit reasoning/access controls, rich file drop, system tray, chat history, and Grok CLI context visibility.
 
-**Current version:** 0.5.0
+**Current version:** 0.6.0
 
 **Stack:** Tauri 2 (Rust) + Svelte 5 (SvelteKit SPA)  
 **Platforms:** Windows 10/11, Linux, and macOS
@@ -13,7 +13,7 @@ Windows is the primary tested platform. Linux packages are built natively on Ubu
 
 ## Screenshots
 
-![Grok Desktop main window](docs/screenshots/main-window-v0.5.0.png)
+![Grok Desktop 0.6.0 main window](docs/screenshots/main-window-v0.6.0.jpg)
 
 More screenshots: [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)
 
@@ -127,6 +127,7 @@ npm run build
 | Search             | Filter projects and chats from one sidebar field; `Ctrl+K` focuses it                                                               |
 | Transcript tools   | Export any chat as Markdown; copy answers or code blocks; retry prior user messages                                                 |
 | Parallel agents    | Discover built-in, project, user, and plugin agents; create `.grok/agents` definitions; dispatch up to eight tabbed background runs |
+| Privacy Center     | Audit upload evidence, protect app-launched tasks, harden CLI config, export reports, and archive or clear local logs               |
 | CLI Context        | Context panel shows Grok CLI capabilities, recent CLI sessions, tracked worktrees, MCP servers, and plugins                         |
 | Updates            | Checks GitHub Releases quietly at startup and every six hours; signed updates install only after user confirmation                  |
 | Tray               | Show/hide, New Chat, Toggle YOLO, Quit                                                                                              |
@@ -152,18 +153,21 @@ Browser-capable MCP servers such as Playwright can be detected and shown when Gr
 
 `%APPDATA%\com.the-kraken.grok-desktop\`
 
-| Path            | Purpose                                             |
-| --------------- | --------------------------------------------------- |
-| `settings.json` | Model, reasoning, approval, output, and UI defaults |
-| `projects.json` | Pinned/recent projects                              |
-| `chats/*.json`  | Chat history (plaintext)                            |
-| `temp_images/`  | Managed message attachments (legacy directory name) |
+| Path                | Purpose                                             |
+| ------------------- | --------------------------------------------------- |
+| `settings.json`     | Model, reasoning, approval, output, and UI defaults |
+| `projects.json`     | Pinned/recent projects                              |
+| `chats/*.json`      | Chat history (plaintext)                            |
+| `temp_images/`      | Managed message attachments (legacy directory name) |
+| `privacy_archives/` | Grok logs archived before local clearing            |
 
 ---
 
 ## Security notes (local app)
 
 - Grok is spawned with discrete argv (no shell) — no classic command injection.
+- Privacy Guard disables optional telemetry sinks and stops app-launched tasks when Grok records a repository-upload event.
+- Broad or sensitive project folders trigger a warning before they are opened.
 - Agent-definition names are path-safe, files are created without overwriting existing definitions, and concurrent runs are capped.
 - Updates are accepted only when their Tauri signature matches the public key embedded in the app.
 - Image paths attached to prompts must live under managed `temp_images/`.

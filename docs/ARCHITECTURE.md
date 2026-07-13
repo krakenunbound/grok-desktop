@@ -32,10 +32,12 @@ flowchart LR
 | Settings and capabilities    | `src/lib/stores/settings.ts`, `src/lib/stores/capabilities.ts` |
 | Parallel agent state         | `src/lib/stores/agents.ts`                                     |
 | Signed updates               | `src/lib/stores/updater.ts`                                    |
+| Privacy audit state          | `src/lib/stores/privacy.ts`                                    |
 | Tauri command bridge         | `src-tauri/src/commands.rs`                                    |
 | Grok process execution       | `src-tauri/src/grok_process.rs`                                |
 | Grok inventory/context       | `src-tauri/src/capabilities.rs`, `src-tauri/src/grok_cli.rs`   |
 | Parallel agent execution     | `src-tauri/src/agent_runs.rs`                                  |
+| Privacy audit and safeguards | `src-tauri/src/privacy.rs`                                     |
 | Local config and persistence | `src-tauri/src/config.rs`                                      |
 | Images                       | `src-tauri/src/image_handler.rs`                               |
 | Tray                         | `src-tauri/src/tray.rs`                                        |
@@ -59,6 +61,10 @@ Project definitions are stored in `<project>/.grok/agents/*.md`; user definition
 ## Updates
 
 The Tauri updater checks the latest GitHub Release after startup, then every six hours, or on demand. Published artifacts are signed in CI. The app embeds only the public verification key, prompts before installation, and restarts after a verified update finishes.
+
+## Privacy Guard
+
+Privacy Guard applies telemetry-off environment variables to chat and parallel-agent processes. It tails Grok's local unified log from the task's start position; if a repository-state upload event appears, the app terminates the contained Grok process tree and raises a visible privacy alert. The Privacy Center audits historical local evidence, can write equivalent persistent CLI settings after creating a backup, and warns before unusually broad project roots are opened.
 
 ## App Data
 

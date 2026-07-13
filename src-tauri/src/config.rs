@@ -39,6 +39,8 @@ pub struct AppSettings {
     pub deny_rules: String,
     pub extra_rules: String,
     pub max_turns: String,
+    /// Disable optional telemetry/trace sinks and stop a turn if repo-state upload is detected.
+    pub privacy_guard_enabled: bool,
 }
 
 impl Default for AppSettings {
@@ -66,6 +68,7 @@ impl Default for AppSettings {
             deny_rules: String::new(),
             extra_rules: String::new(),
             max_turns: String::new(),
+            privacy_guard_enabled: true,
         }
     }
 }
@@ -635,7 +638,7 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), String>
     Ok(())
 }
 
-fn write_text_atomic(path: &Path, value: &str) -> Result<(), String> {
+pub(crate) fn write_text_atomic(path: &Path, value: &str) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| "Invalid path (no parent)".to_string())?;
