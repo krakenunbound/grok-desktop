@@ -1,5 +1,6 @@
 //! Grok Desktop — Tauri application entry (library target).
 
+mod agent_runs;
 mod capabilities;
 mod commands;
 mod config;
@@ -10,6 +11,7 @@ mod launch_status;
 mod tray;
 mod usage;
 
+use agent_runs::AgentRunManager;
 use grok_process::GrokManager;
 use launch_status::LaunchStatus;
 use std::net::TcpStream;
@@ -98,7 +100,10 @@ fn ensure_offline_ui_if_needed(app: &tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(GrokManager::new())
+        .manage(AgentRunManager::new())
         .manage(LaunchStatus::default())
         .on_page_load(|webview, payload| {
             let app = webview.app_handle().clone();
@@ -240,6 +245,10 @@ pub fn run() {
             commands::set_mcp_server_enabled,
             commands::set_plugin_enabled,
             commands::get_grok_cli_overview,
+            commands::list_agent_definitions,
+            commands::create_agent_definition,
+            commands::start_agent_run,
+            commands::stop_agent_run,
             commands::list_chats,
             commands::load_chat,
             commands::save_chat,

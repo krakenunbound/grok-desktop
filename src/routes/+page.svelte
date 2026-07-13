@@ -8,6 +8,9 @@
   import DocumentationModal from "$lib/components/DocumentationModal.svelte";
   import UsageMeter from "$lib/components/UsageMeter.svelte";
   import RightPanel from "$lib/components/RightPanel.svelte";
+  import AgentsWorkspace from "$lib/components/AgentsWorkspace.svelte";
+  import UpdateControl from "$lib/components/UpdateControl.svelte";
+  import { agentRuns, bindAgentEvents } from "$lib/stores/agents";
   import { get } from "svelte/store";
   import {
     bindGrokEvents,
@@ -31,6 +34,7 @@
   let rightOpen = $state(false);
   let settingsOpen = $state(false);
   let docsOpen = $state(false);
+  let agentsOpen = $state(false);
   let ready = $state(false);
   let bootPhase = $state("Starting Grok Desktop…");
   let bootError = $state<string | null>(null);
@@ -63,6 +67,10 @@
         e.preventDefault();
         settingsOpen = true;
       }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        agentsOpen = true;
+      }
       if (e.key === "F1" || ((e.ctrlKey || e.metaKey) && e.key === "/")) {
         e.preventDefault();
         docsOpen = true;
@@ -80,6 +88,7 @@
 
       bootPhase = "Binding chat events…";
       await bindGrokEvents();
+      await bindAgentEvents();
 
       bootPhase = "Loading settings…";
       const s = await loadSettings();
@@ -230,11 +239,25 @@
     <div class="main">
       <header class="topbar">
         <div class="left">
-          <h1 class="title">Grok Desktop <span class="version">v0.4.0</span></h1>
+          <h1 class="title">Grok Desktop <span class="version">v0.5.0</span></h1>
         </div>
         <div class="right" role="toolbar" aria-label="Session controls">
           <UsageMeter />
+          <UpdateControl />
           <VerboseToggle />
+          <button
+            type="button"
+            class="tb agent-button"
+            onclick={() => (agentsOpen = true)}
+            title="Parallel agents (Ctrl+Shift+A)"
+          >
+            Agents
+            {#if $agentRuns.some((run) => run.status === "running")}
+              <span class="agent-count"
+                >{$agentRuns.filter((run) => run.status === "running").length}</span
+              >
+            {/if}
+          </button>
           <button
             type="button"
             class="tb"
@@ -270,6 +293,11 @@
 
   <SettingsModal open={settingsOpen} onclose={() => (settingsOpen = false)} />
   <DocumentationModal open={docsOpen} onclose={() => (docsOpen = false)} />
+  <AgentsWorkspace
+    open={agentsOpen}
+    fallbackCwd={workspaceCwd}
+    onclose={() => (agentsOpen = false)}
+  />
 
   {#if $errorToast}
     <div class="toast" role="alert" aria-live="assertive">{$errorToast}</div>
@@ -383,6 +411,22 @@
     font-size: 0.82rem;
     cursor: pointer;
     font-family: inherit;
+  }
+  .agent-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .agent-count {
+    min-width: 1.1rem;
+    height: 1.1rem;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-contrast);
+    font-size: 0.65rem;
+    font-weight: 800;
   }
   .tb:hover {
     border-color: var(--accent-dim);

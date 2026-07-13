@@ -33,6 +33,7 @@
         <a href="#quick-start">Quick start</a>
         <a href="#projects">Projects</a>
         <a href="#chat">Chat</a>
+        <a href="#agents">Agents</a>
         <a href="#settings">Settings</a>
         <a href="#troubleshooting">Troubleshooting</a>
         <a href="#roadmap">Roadmap</a>
@@ -51,6 +52,25 @@
           </li>
           <li>Use <strong>Stop</strong> to cancel a long turn.</li>
         </ol>
+      </section>
+
+      <section id="agents">
+        <h3>Parallel agents</h3>
+        <ul>
+          <li>
+            Open <strong>Agents</strong> or press <strong>Ctrl+Shift+A</strong> to dispatch independent
+            tasks that continue in background tabs.
+          </li>
+          <li>
+            The agent picker includes definitions Grok discovers from built-ins, the current
+            project, your user profile, and plugins.
+          </li>
+          <li>
+            Create reusable project agents in <code>.grok/agents</code> or user agents in
+            <code>~/.grok/agents</code> without leaving the app.
+          </li>
+          <li>Up to eight tasks can run concurrently, and each task can be stopped separately.</li>
+        </ul>
       </section>
 
       <section id="projects">
@@ -110,6 +130,10 @@
             MCP servers managed by config can be toggled here; plugin or connector-owned servers are
             read-only.
           </li>
+          <li>
+            Updates are checked against GitHub Releases quietly and install only after confirmation
+            and signature verification.
+          </li>
         </ul>
       </section>
 
@@ -142,7 +166,7 @@
           </li>
           <li>Full worktree workflow for isolated parallel tasks.</li>
           <li>In-app browser or Chrome control for visual verification.</li>
-          <li>Automations, scheduled checks, and background runs.</li>
+          <li>Automations and scheduled checks.</li>
         </ul>
       </section>
     </div>

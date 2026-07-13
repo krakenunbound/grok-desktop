@@ -3,7 +3,6 @@
 ## Near Term
 
 - Add persistent Grok agent transport to reduce per-turn startup latency.
-- Add GitHub release packaging with installer artifacts.
 - Add smoke tests around project actions, settings, image attach, and chat persistence.
 - Add import plus bulk export for app settings and chat history. Individual chats can already be exported as Markdown.
 
@@ -31,5 +30,4 @@
 ## Packaging
 
 - Signed Windows installer.
-- Auto-update channel.
 - macOS/Linux validation.

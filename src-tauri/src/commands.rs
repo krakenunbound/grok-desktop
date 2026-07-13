@@ -1,5 +1,8 @@
 //! Tauri commands exposed to the Svelte frontend.
 
+use crate::agent_runs::{
+    self, AgentDefinition, AgentRunManager, AgentRunStarted, StartAgentRunRequest,
+};
 use crate::capabilities::{self, GrokInventory};
 use crate::config::{self, AppSettings, ChatMessage, ChatSession, Project, ProjectStore};
 use crate::grok_cli::{self, GrokCliOverview};
@@ -170,6 +173,59 @@ pub fn set_plugin_enabled(name: String, enabled: bool) -> Result<GrokInventory, 
 pub fn get_grok_cli_overview(cwd: Option<String>) -> Result<GrokCliOverview, String> {
     let settings = config::load_settings();
     grok_cli::overview(&settings.grok_binary, cwd.as_deref())
+}
+
+#[tauri::command]
+pub fn list_agent_definitions(cwd: String) -> Result<Vec<AgentDefinition>, String> {
+    let settings = config::load_settings();
+    agent_runs::list_definitions(&settings.grok_binary, &cwd)
+}
+
+#[tauri::command]
+pub fn create_agent_definition(
+    cwd: String,
+    scope: String,
+    name: String,
+    description: String,
+    instructions: String,
+) -> Result<String, String> {
+    agent_runs::create_definition(&cwd, &scope, &name, &description, &instructions)
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn start_agent_run(
+    app: AppHandle,
+    manager: State<'_, AgentRunManager>,
+    cwd: String,
+    agent: String,
+    prompt: String,
+    model: String,
+    yolo: bool,
+) -> Result<AgentRunStarted, String> {
+    let settings = config::load_settings();
+    agent_runs::start_run(
+        app,
+        manager.inner(),
+        &settings.grok_binary,
+        StartAgentRunRequest {
+            cwd,
+            agent,
+            prompt,
+            model,
+            yolo,
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn stop_agent_run(
+    manager: State<'_, AgentRunManager>,
+    run_id: String,
+) -> Result<(), String> {
+    config::validate_id(&run_id, "agent run")?;
+    agent_runs::stop_run(manager.inner(), &run_id).await
 }
 
 #[tauri::command]

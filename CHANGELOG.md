@@ -2,6 +2,25 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## 0.5.0 - 2026-07-13
+
+### Added
+
+- Parallel Agents workspace with one tab per independent run, live output, stop controls, and up to eight concurrent tasks.
+- Discovery of Grok's built-in, project, user, and plugin agent definitions through `grok inspect`.
+- In-app creation of project `.grok/agents` and user `~/.grok/agents` definitions.
+- Signed GitHub Releases updater with quiet startup and six-hour checks, a manual Updates control, download progress, and confirmation before restart.
+
+### Changed
+
+- Exposed Grok Build's background-agent workflow as a desktop-native tabbed workspace instead of requiring `/dashboard` in the CLI.
+- Updated release automation to publish the signed updater manifest and platform artifacts.
+
+### Security
+
+- Agent definitions use validated path-safe names and exclusive file creation to prevent traversal and accidental overwrite.
+- Parallel agent runs are capped and remain inside the existing Windows process-job containment.
+
 ## 0.4.0 - 2026-07-12
 
 ### Added

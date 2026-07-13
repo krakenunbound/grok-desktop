@@ -55,13 +55,16 @@ fn command_cwd(cwd: Option<&str>) -> Result<PathBuf, String> {
     }
 }
 
-fn run_grok(
+pub(crate) fn run_grok(
     grok_binary_override: &str,
-    cwd: Option<&str>,
+    cwd: Option<&PathBuf>,
     args: &[&str],
 ) -> Result<Output, String> {
     let binary = grok_process::resolve_grok_binary(grok_binary_override)?;
-    let cwd = command_cwd(cwd)?;
+    let cwd = match cwd {
+        Some(path) => command_cwd(path.to_str())?,
+        None => command_cwd(None)?,
+    };
     let mut command = Command::new(binary);
     command.args(args).current_dir(cwd);
 
@@ -194,7 +197,12 @@ fn capabilities() -> Vec<GrokCliCapability> {
 pub fn overview(grok_binary_override: &str, cwd: Option<&str>) -> Result<GrokCliOverview, String> {
     let mut errors = Vec::new();
 
-    let sessions = match run_grok(grok_binary_override, cwd, &["sessions", "list", "-n", "8"]) {
+    let resolved_cwd = cwd.map(PathBuf::from);
+    let sessions = match run_grok(
+        grok_binary_override,
+        resolved_cwd.as_ref(),
+        &["sessions", "list", "-n", "8"],
+    ) {
         Ok(output) if output.status.success() => parse_sessions(&output_text(&output)),
         Ok(output) => {
             errors.push(format!("sessions list failed: {}", output_text(&output)));
@@ -208,7 +216,7 @@ pub fn overview(grok_binary_override: &str, cwd: Option<&str>) -> Result<GrokCli
 
     let worktrees = match run_grok(
         grok_binary_override,
-        cwd,
+        resolved_cwd.as_ref(),
         &["worktree", "list", "--json", "--all"],
     ) {
         Ok(output) if output.status.success() => match parse_worktrees(&output.stdout) {

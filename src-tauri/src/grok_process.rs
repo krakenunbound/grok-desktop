@@ -58,7 +58,7 @@ impl GrokManager {
 }
 
 #[cfg(windows)]
-fn create_kill_on_close_job(process_id: u32) -> Result<isize, String> {
+pub(crate) fn create_kill_on_close_job(process_id: u32) -> Result<isize, String> {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
@@ -112,12 +112,12 @@ fn create_kill_on_close_job(process_id: u32) -> Result<isize, String> {
 }
 
 #[cfg(not(windows))]
-fn create_kill_on_close_job(_process_id: u32) -> Result<isize, String> {
+pub(crate) fn create_kill_on_close_job(_process_id: u32) -> Result<isize, String> {
     Ok(0)
 }
 
 #[cfg(windows)]
-fn close_job(handle: isize) {
+pub(crate) fn close_job(handle: isize) {
     use windows_sys::Win32::Foundation::CloseHandle;
     unsafe {
         CloseHandle(handle as *mut std::ffi::c_void);
@@ -125,7 +125,7 @@ fn close_job(handle: isize) {
 }
 
 #[cfg(not(windows))]
-fn close_job(_handle: isize) {}
+pub(crate) fn close_job(_handle: isize) {}
 
 impl Default for GrokManager {
     fn default() -> Self {
