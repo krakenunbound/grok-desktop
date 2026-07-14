@@ -31,7 +31,7 @@ flowchart LR
 | Project state                | `src/lib/stores/projects.ts`                                   |
 | Settings and capabilities    | `src/lib/stores/settings.ts`, `src/lib/stores/capabilities.ts` |
 | Parallel agent state         | `src/lib/stores/agents.ts`                                     |
-| Signed updates               | `src/lib/stores/updater.ts`                                    |
+| Desktop and CLI updates      | `src/lib/stores/updater.ts`, `src-tauri/src/grok_cli.rs`       |
 | Privacy audit state          | `src/lib/stores/privacy.ts`                                    |
 | Tauri command bridge         | `src-tauri/src/commands.rs`                                    |
 | Grok process execution       | `src-tauri/src/grok_process.rs`                                |
@@ -61,6 +61,10 @@ Project definitions are stored in `<project>/.grok/agents/*.md`; user definition
 ## Updates
 
 The Tauri updater checks the latest GitHub Release after startup, then every six hours, or on demand. Published artifacts are signed in CI. The app embeds only the public verification key, prompts before installation, and restarts after a verified update finishes.
+
+Grok CLI updates remain a separate official channel. Grok Desktop calls `grok update --check --json` for machine-readable installed/latest status and invokes `grok update` only after a second installation confirmation. Installation is blocked while chat or agent tasks are active and runs without a console window.
+
+At startup, the usage meter launches a hidden, prompt-free Grok session only long enough for the CLI to publish a fresh billing snapshot, then terminates the contained process tree. It does not send a model prompt or create a chat session. If no fresh snapshot arrives, the UI reports usage as unavailable rather than showing stale numeric allocation.
 
 ## Privacy Guard
 

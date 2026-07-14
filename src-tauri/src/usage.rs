@@ -5,6 +5,8 @@ use serde_json::Value;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
+use std::process::Stdio;
+use std::time::Duration;
 
 const MAX_LOG_TAIL_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -46,6 +48,63 @@ impl Default for UsageSnapshot {
 
 pub fn load_usage() -> UsageSnapshot {
     load_usage_from_path(usage_log_path())
+}
+
+pub async fn refresh_usage(grok_binary_override: &str) -> Result<UsageSnapshot, String> {
+    let before = load_usage();
+    let previous_update = before.updated_at.clone();
+    let binary = crate::grok_process::resolve_grok_binary(grok_binary_override)?;
+    let mut command = tokio::process::Command::new(binary);
+    command
+        .arg("--no-alt-screen")
+        .current_dir(dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    crate::privacy::apply_process_guard(&mut command);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Start Grok usage refresh: {error}"))?;
+    let process_id = child
+        .id()
+        .ok_or_else(|| "Grok usage refresh did not expose a process ID".to_string())?;
+    let job = crate::grok_process::create_kill_on_close_job(process_id)?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+    let snapshot = loop {
+        let current = load_usage();
+        if current.available && current.updated_at != previous_update {
+            break Some(current);
+        }
+        match child.try_wait() {
+            Ok(Some(_)) => break None,
+            Ok(None) => {}
+            Err(error) => {
+                crate::grok_process::close_job(job);
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                return Err(format!("Check Grok usage refresh: {error}"));
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            break None;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+
+    crate::grok_process::close_job(job);
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+    Ok(snapshot.unwrap_or_else(|| UsageSnapshot {
+        detail: "Grok did not publish a fresh billing snapshot during startup.".into(),
+        ..UsageSnapshot::default()
+    }))
 }
 
 fn usage_log_path() -> Option<PathBuf> {

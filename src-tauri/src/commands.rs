@@ -539,6 +539,36 @@ pub fn get_usage() -> UsageSnapshot {
     usage::load_usage()
 }
 
+#[tauri::command]
+pub async fn refresh_usage(
+    manager: State<'_, GrokManager>,
+    agents: State<'_, AgentRunManager>,
+) -> Result<UsageSnapshot, String> {
+    if grok_process::is_running(manager.inner()).await || agents.active_count().await > 0 {
+        return Ok(usage::load_usage());
+    }
+    let settings = config::load_settings();
+    usage::refresh_usage(&settings.grok_binary).await
+}
+
+#[tauri::command]
+pub async fn check_grok_cli_update() -> Result<grok_cli::GrokUpdateStatus, String> {
+    let settings = config::load_settings();
+    grok_cli::check_update(&settings.grok_binary).await
+}
+
+#[tauri::command]
+pub async fn install_grok_cli_update(
+    manager: State<'_, GrokManager>,
+    agents: State<'_, AgentRunManager>,
+) -> Result<grok_cli::GrokUpdateStatus, String> {
+    if grok_process::is_running(manager.inner()).await || agents.active_count().await > 0 {
+        return Err("Stop all Grok and agent tasks before updating Grok CLI".into());
+    }
+    let settings = config::load_settings();
+    grok_cli::install_update(&settings.grok_binary).await
+}
+
 // --- Launch / WebView load reporting ---
 
 /// Called by the Svelte app once it has successfully mounted.

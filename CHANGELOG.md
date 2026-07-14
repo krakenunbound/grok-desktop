@@ -2,6 +2,20 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## 0.7.0 - 2026-07-14
+
+### Added
+
+- Grok CLI Update Center backed by the official `grok update --check --json` and `grok update` flows.
+- Automatic six-hour CLI update checks with installed/latest version and release-channel visibility.
+- A two-step installation warning that preserves projects, chats, settings, and xAI login while replacing the CLI executable.
+
+### Changed
+
+- Usage now performs a prompt-free startup refresh and waits for a new billing snapshot instead of briefly presenting stale allocation data as `0% left`.
+- The usage badge shows `Checking…` until fresh information is available and never substitutes a stale numeric value when refresh fails.
+- Desktop and CLI update actions are labeled separately in the application menu.
+
 ## 0.6.1 - 2026-07-13
 
 ### Added

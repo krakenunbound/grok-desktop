@@ -26,6 +26,7 @@ Chat history is plaintext. Treat the local machine as trusted and avoid attachin
 - Broad or sensitive project roots trigger a confirmation warning.
 - Privacy Guard adds telemetry-off environment settings to app-launched Grok tasks and stops the contained process tree if Grok records a repository-state upload event.
 - Persistent CLI config hardening creates a timestamped backup before changing `~/.grok/config.toml`.
+- Grok CLI updates call the resolved Grok executable's official self-updater directly without a shell or console window. Installation is blocked while Grok tasks are active; Grok Desktop does not download or replace the CLI itself.
 
 Privacy Guard is defense in depth around the installed Grok Build CLI and cannot guarantee the behavior of third-party binaries. Account-level Zero Data Retention is a separate xAI setting managed through Grok Build's `/privacy` flow.
 

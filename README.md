@@ -2,7 +2,7 @@
 
 Lightweight desktop GUI for the **Grok Build** CLI — Codex-inspired dark UI, project workspaces, explicit reasoning/access controls, rich file drop, system tray, chat history, and Grok CLI context visibility.
 
-**Current version:** 0.6.1
+**Current version:** 0.7.0
 
 **Stack:** Tauri 2 (Rust) + Svelte 5 (SvelteKit SPA)  
 **Platforms:** Windows 10/11, Linux, and macOS
@@ -121,7 +121,7 @@ npm run build
 | Reasoning          | Low, medium, or high reasoning effort next to the model selector                                                                    |
 | Agent Transparency | **Default Hidden** (status only). **Verbose** streams raw output. Per-message “Show agent details”; say “show raw output”           |
 | Attachments        | Paste images or drop/select images, video, audio, documents, code, and archives; managed local copies, previews, 16/file turn cap   |
-| Usage              | Allocation remaining, reset time, prepaid credits, and on-demand spend from Grok CLI billing telemetry                              |
+| Usage              | Fresh startup allocation, reset time, prepaid credits, and on-demand spend without sending a model prompt                           |
 | Projects           | Create a new project folder or open an existing one; session cwd follows the selected project                                       |
 | History            | Per-chat JSON under app data; last chat restored on launch                                                                          |
 | Search             | Filter projects and chats from one sidebar field; `Ctrl+K` focuses it                                                               |
@@ -129,7 +129,7 @@ npm run build
 | Parallel agents    | Discover built-in, project, user, and plugin agents; create `.grok/agents` definitions; dispatch up to eight tabbed background runs |
 | Privacy Center     | Manage Zero Data Retention, audit uploads, protect tasks, harden CLI config, export reports, and archive or clear local logs        |
 | CLI Context        | Context panel shows Grok CLI capabilities, recent CLI sessions, tracked worktrees, MCP servers, and plugins                         |
-| Updates            | Checks GitHub Releases quietly at startup and every six hours; signed updates install only after user confirmation                  |
+| Updates            | Separately checks signed Grok Desktop releases and official Grok CLI updates; installs only after user confirmation                 |
 | Tray               | Show/hide, New Chat, Toggle YOLO, Quit                                                                                              |
 | Documentation      | In-app Docs modal with quick start, troubleshooting, and roadmap notes                                                              |
 | Shortcuts          | `Ctrl+K` search · `Ctrl+N` new chat · `Ctrl+Shift+A` agents · `Ctrl+Shift+Y` YOLO · `Ctrl+,` settings · `F1` docs                   |

@@ -156,8 +156,8 @@
             read-only.
           </li>
           <li>
-            Updates are checked against GitHub Releases quietly and install only after confirmation
-            and signature verification.
+            Grok Desktop updates are checked against signed GitHub Releases. Grok CLI updates use
+            Grok Build's official self-updater. Both install only after confirmation.
           </li>
         </ul>
       </section>

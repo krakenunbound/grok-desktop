@@ -267,7 +267,7 @@
     <div class="main">
       <header class="topbar">
         <div class="left">
-          <h1 class="title">Grok Desktop <span class="version">v0.6.1</span></h1>
+          <h1 class="title">Grok Desktop <span class="version">v0.7.0</span></h1>
         </div>
         <div class="right" role="toolbar" aria-label="Session controls">
           <UsageMeter />

@@ -25,34 +25,39 @@
 
   onMount(() => {
     let doneUnlisten: UnlistenFn | undefined;
-    const timer = window.setInterval(() => void refresh(), 60_000);
-    void listen("grok-done", () => void refresh()).then((stop) => (doneUnlisten = stop));
-    void refresh();
+    const timer = window.setInterval(() => void refresh(false), 60_000);
+    void listen("grok-done", () => void refresh(false)).then((stop) => (doneUnlisten = stop));
+    void refresh(true);
     return () => {
       window.clearInterval(timer);
       doneUnlisten?.();
     };
   });
 
-  async function refresh() {
+  async function refresh(fresh: boolean) {
+    if (loading) return;
     loading = true;
     try {
-      usage = await invoke<UsageSnapshot>("get_usage");
+      usage = await invoke<UsageSnapshot>(fresh ? "refresh_usage" : "get_usage");
     } catch {
-      usage = {
-        available: false,
-        usagePercent: 0,
-        remainingPercent: 0,
-        periodStart: null,
-        periodEnd: null,
-        prepaidBalanceCents: 0,
-        onDemandUsedCents: 0,
-        onDemandCapCents: 0,
-        subscriptionTier: null,
-        updatedAt: null,
-        source: "Grok CLI telemetry",
-        detail: "The usage snapshot could not be read.",
-      };
+      try {
+        usage = await invoke<UsageSnapshot>("get_usage");
+      } catch {
+        usage = {
+          available: false,
+          usagePercent: 0,
+          remainingPercent: 0,
+          periodStart: null,
+          periodEnd: null,
+          prepaidBalanceCents: 0,
+          onDemandUsedCents: 0,
+          onDemandCapCents: 0,
+          subscriptionTier: null,
+          updatedAt: null,
+          source: "Grok CLI telemetry",
+          detail: "The usage snapshot could not be read.",
+        };
+      }
     } finally {
       loading = false;
     }
@@ -60,7 +65,7 @@
 
   function toggle(event: MouseEvent) {
     open = !open;
-    if (open) void refresh();
+    if (open) void refresh(true);
   }
 
   function closeOutside(event: MouseEvent) {
@@ -111,14 +116,20 @@
     onclick={toggle}
   >
     <span class="ring" style={`--used: ${usage?.usagePercent ?? 0}%`}></span>
-    <span>{usage?.available ? `${Math.round(usage.remainingPercent)}% left` : "Usage"}</span>
+    <span
+      >{usage?.available
+        ? `${Math.round(usage.remainingPercent)}% left`
+        : loading || usage === null
+          ? "Checking…"
+          : "Usage"}</span
+    >
   </button>
 
   {#if open}
     <div class="usage-card" role="dialog" aria-label="Grok usage and credits" tabindex="-1">
       <header>
         <div><strong>Usage</strong><small>{usage?.subscriptionTier || "Grok account"}</small></div>
-        <button type="button" class="refresh" disabled={loading} onclick={() => refresh()}>
+        <button type="button" class="refresh" disabled={loading} onclick={() => refresh(true)}>
           {loading ? "…" : "↻"}
         </button>
       </header>

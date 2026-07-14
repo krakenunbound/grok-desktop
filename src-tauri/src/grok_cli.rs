@@ -1,8 +1,9 @@
 use crate::grok_process;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GrokCliSession {
@@ -35,6 +36,100 @@ pub struct GrokCliOverview {
     pub worktrees: Vec<GrokCliWorktree>,
     pub capabilities: Vec<GrokCliCapability>,
     pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokUpdateStatus {
+    pub current_version: String,
+    pub latest_version: String,
+    pub update_available: bool,
+    pub installer: String,
+    pub channel: String,
+    pub auto_update: bool,
+    pub error: Option<String>,
+}
+
+async fn run_update_command(
+    grok_binary_override: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Output, String> {
+    let binary = grok_process::resolve_grok_binary(grok_binary_override)?;
+    let mut command = tokio::process::Command::new(binary);
+    command
+        .args(args)
+        .current_dir(dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    crate::privacy::apply_process_guard(&mut command);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let child = command
+        .spawn()
+        .map_err(|error| format!("Start Grok CLI updater: {error}"))?;
+    let process_id = child
+        .id()
+        .ok_or_else(|| "Grok CLI updater did not expose a process ID".to_string())?;
+    let job = grok_process::create_kill_on_close_job(process_id)?;
+    let result = tokio::time::timeout(timeout, child.wait_with_output()).await;
+    grok_process::close_job(job);
+
+    match result {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(error)) => Err(format!("Wait for Grok CLI updater: {error}")),
+        Err(_) => Err(format!(
+            "Grok CLI updater did not finish within {} seconds",
+            timeout.as_secs()
+        )),
+    }
+}
+
+pub async fn check_update(grok_binary_override: &str) -> Result<GrokUpdateStatus, String> {
+    let output = run_update_command(
+        grok_binary_override,
+        &["update", "--check", "--json"],
+        Duration::from_secs(20),
+    )
+    .await?;
+    if !output.status.success() {
+        return Err(format!(
+            "Grok CLI update check exited with {}",
+            output.status
+        ));
+    }
+    let status = parse_update_status(&output.stdout)?;
+    if let Some(error) = status.error.as_deref().filter(|value| !value.is_empty()) {
+        return Err(format!("Grok CLI update check: {error}"));
+    }
+    Ok(status)
+}
+
+pub async fn install_update(grok_binary_override: &str) -> Result<GrokUpdateStatus, String> {
+    let before = check_update(grok_binary_override).await?;
+    if !before.update_available {
+        return Ok(before);
+    }
+    let output =
+        run_update_command(grok_binary_override, &["update"], Duration::from_secs(180)).await?;
+    if !output.status.success() {
+        return Err(format!("Grok CLI update exited with {}", output.status));
+    }
+    let after = check_update(grok_binary_override).await?;
+    if after.current_version == before.current_version {
+        return Err("Grok CLI updater finished but the installed version did not change".into());
+    }
+    Ok(after)
+}
+
+fn parse_update_status(bytes: &[u8]) -> Result<GrokUpdateStatus, String> {
+    serde_json::from_slice(bytes).map_err(|error| format!("Read Grok CLI update status: {error}"))
 }
 
 fn command_cwd(cwd: Option<&str>) -> Result<PathBuf, String> {
@@ -246,7 +341,21 @@ pub fn overview(grok_binary_override: &str, cwd: Option<&str>) -> Result<GrokCli
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_sessions, parse_worktrees};
+    use super::{parse_sessions, parse_update_status, parse_worktrees};
+
+    #[test]
+    fn parses_machine_readable_update_status() {
+        let status = parse_update_status(
+            br#"{"currentVersion":"0.2.99","latestVersion":"0.2.101","updateAvailable":true,"installer":"internal","channel":"stable","autoUpdate":true,"error":null}"#,
+        )
+        .expect("update status should parse");
+
+        assert_eq!(status.current_version, "0.2.99");
+        assert_eq!(status.latest_version, "0.2.101");
+        assert!(status.update_available);
+        assert_eq!(status.channel, "stable");
+        assert!(status.auto_update);
+    }
 
     #[test]
     fn parses_sessions_table_with_summary_spaces() {

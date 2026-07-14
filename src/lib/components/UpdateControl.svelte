@@ -36,12 +36,12 @@
   let label = $derived(
     transientLabel ||
       ($updatePhase === "available"
-        ? `Update v${$updateVersion}`
+        ? `Desktop v${$updateVersion}`
         : $updatePhase === "checking"
           ? "Checking…"
           : $updatePhase === "downloading"
             ? `Updating ${$updateProgress}%`
-            : "Updates"),
+            : "Grok Desktop updates"),
   );
 </script>
 

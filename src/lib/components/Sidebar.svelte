@@ -29,6 +29,7 @@
   import { invoke } from "@tauri-apps/api/core";
   import { save as saveDialog } from "@tauri-apps/plugin-dialog";
   import ProjectDialog from "$lib/components/ProjectDialog.svelte";
+  import GrokCliUpdateControl from "$lib/components/GrokCliUpdateControl.svelte";
   import UpdateControl from "$lib/components/UpdateControl.svelte";
   import VerboseToggle from "$lib/components/VerboseToggle.svelte";
 
@@ -67,6 +68,8 @@
   let searchInput = $state<HTMLInputElement>();
   let projectDialogOpen = $state(false);
   let appMenuOpen = $state(false);
+  let cliUpdateOpen = $state(false);
+  let cliUpdateAvailable = $state(false);
   let normalizedQuery = $derived(searchQuery.trim().toLowerCase());
   let filteredPinnedProjects = $derived(
     $pinnedProjects.filter((project) => matchesProject(project)),
@@ -542,6 +545,23 @@
         </button>
         <div class="component-action" role="presentation"><VerboseToggle /></div>
         <div class="component-action" role="presentation"><UpdateControl /></div>
+        <button
+          type="button"
+          role="menuitem"
+          class:protected={cliUpdateAvailable}
+          onclick={() => {
+            appMenuOpen = false;
+            cliUpdateOpen = true;
+          }}
+        >
+          {#if cliUpdateAvailable}
+            <span class="update-dot" aria-hidden="true"></span>
+          {:else}
+            <span aria-hidden="true">↻</span>
+          {/if}
+          <span>Grok CLI updates</span>
+          {#if cliUpdateAvailable}<small>Available</small>{/if}
+        </button>
         <button type="button" role="menuitem" onclick={() => ((appMenuOpen = false), ondocs())}>
           <span aria-hidden="true">?</span>
           <span>Documentation</span>
@@ -567,7 +587,7 @@
       }}
     >
       <span aria-hidden="true">☰</span>
-      {#if !collapsed}<span>Menu</span><small>v0.6.1</small>{/if}
+      {#if !collapsed}<span>Menu</span><small>v0.7.0</small>{/if}
     </button>
   </div>
 </aside>
@@ -576,6 +596,12 @@
   open={projectDialogOpen}
   onclose={() => (projectDialogOpen = false)}
   onselect={onAddProject}
+/>
+
+<GrokCliUpdateControl
+  open={cliUpdateOpen}
+  onclose={() => (cliUpdateOpen = false)}
+  onstatus={(available) => (cliUpdateAvailable = available)}
 />
 
 <style>
@@ -677,7 +703,15 @@
   .app-menu-popover button.warning {
     color: #ffb38a;
   }
-  .component-action :global(button) {
+  .app-menu-popover .update-dot {
+    width: 8px;
+    height: 8px;
+    justify-self: center;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent-glow);
+  }
+  .component-action > :global(button) {
     width: 100%;
     min-height: 36px;
     border: none;
@@ -687,8 +721,8 @@
     padding: 0.45rem 0.55rem 0.45rem 2.55rem;
     font-size: 0.78rem;
   }
-  .component-action :global(button:hover),
-  .component-action :global(button:focus-visible) {
+  .component-action > :global(button:hover),
+  .component-action > :global(button:focus-visible) {
     background: var(--surface-2);
     outline: none;
   }
