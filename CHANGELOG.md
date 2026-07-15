@@ -2,6 +2,14 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## 0.7.3 - 2026-07-15
+
+### Fixed
+
+- **Ask before actions** now uses Grok Build's live Agent Client Protocol permission channel instead of the non-interactive headless path that cancelled protected actions.
+- Protected tool calls pause in the composer with the exact action, available **Allow** choices, and **Deny**; Grok resumes the same turn after the decision.
+- ACP sessions remain conversational per chat, support cancellation, retain Privacy Guard monitoring, and use the CRLF framing required by Grok Build on Windows.
+
 ## 0.7.2 - 2026-07-15
 
 ### Fixed

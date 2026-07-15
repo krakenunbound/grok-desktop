@@ -38,6 +38,7 @@ commands.allow = [
   "append_chat_message",
   "start_grok_session",
   "send_message",
+  "resolve_grok_permission",
   "stop_session",
   "set_session_yolo",
   "set_session_model",

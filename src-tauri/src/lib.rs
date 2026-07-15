@@ -265,6 +265,7 @@ pub fn run() {
             commands::append_chat_message,
             commands::start_grok_session,
             commands::send_message,
+            commands::resolve_grok_permission,
             commands::stop_session,
             commands::set_session_yolo,
             commands::set_session_model,

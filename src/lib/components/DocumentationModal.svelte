@@ -47,7 +47,11 @@
             Select <strong>New Project</strong>, then create a new project or use an existing
             folder.
           </li>
-          <li>Choose the model, reasoning depth, and approval profile in the composer.</li>
+          <li>
+            Choose the model, reasoning depth, and approval profile in the composer. <strong
+              >Ask before actions</strong
+            > pauses protected work and shows Allow or Deny choices above the composer.
+          </li>
           <li>
             Send a prompt. Hidden mode shows clean answers; Verbose mode shows raw agent output.
           </li>

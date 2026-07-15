@@ -450,6 +450,15 @@ pub async fn stop_session(manager: State<'_, GrokManager>) -> Result<(), String>
 }
 
 #[tauri::command]
+pub async fn resolve_grok_permission(
+    manager: State<'_, GrokManager>,
+    request_id: String,
+    option_id: Option<String>,
+) -> Result<(), String> {
+    grok_process::resolve_permission(manager.inner(), request_id, option_id).await
+}
+
+#[tauri::command]
 pub async fn set_session_yolo(
     manager: State<'_, GrokManager>,
     yolo: bool,

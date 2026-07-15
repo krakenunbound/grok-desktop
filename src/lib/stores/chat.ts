@@ -52,9 +52,23 @@ export interface PendingAttachment {
   previewUrl?: string;
 }
 
+export interface PermissionOption {
+  id: string;
+  name: string;
+  kind: "allow_once" | "allow_always" | "reject_once" | "reject_always" | string;
+}
+
+export interface PermissionRequest {
+  request_id: string;
+  title: string;
+  tool_call: Record<string, unknown>;
+  options: PermissionOption[];
+}
+
 export const currentChat = writable<ChatSession | null>(null);
 export const chatList = writable<ChatSession[]>([]);
 export const pendingAttachments = writable<PendingAttachment[]>([]);
+export const pendingPermission = writable<PermissionRequest | null>(null);
 export const isRunning = writable(false);
 export const runningSince = writable<number | null>(null);
 export const status = writable<GrokStatus>({
@@ -111,6 +125,15 @@ function appendStream(line: string): string {
     if (next.length <= MAX_STREAM_CHARS) return next;
     // Keep the tail (most recent output).
     return next.slice(next.length - MAX_STREAM_CHARS);
+  });
+  return get(streamBuffer);
+}
+
+function appendStreamChunk(chunk: string): string {
+  const cleanChunk = cleanTerminalText(chunk);
+  streamBuffer.update((buffer) => {
+    const next = `${buffer}${cleanChunk}`;
+    return next.length <= MAX_STREAM_CHARS ? next : next.slice(next.length - MAX_STREAM_CHARS);
   });
   return get(streamBuffer);
 }
@@ -198,7 +221,7 @@ export function extractFinalReply(raw: string): string {
 
   const lines = text.split(/\r?\n/);
   const noise =
-    /^(tool\s*call|running tool|invoking|function call|always-approve|permission|stderr:|\[stderr\]\s*\[thought\]|DEBUG|trace)/i;
+    /^(tool\s*call|running tool|invoking|function call|always-approve|permission|stderr:|\[stderr\]|DEBUG|trace)/i;
   const stderrToolError =
     /^\[stderr\].*(?:tool error:\s*tool_output_error|error_kind="?tool_output_error"?|tool_output_error)/i;
   const cleaned = lines.filter((line) => {
@@ -284,6 +307,13 @@ export async function bindGrokEvents(): Promise<void> {
   );
 
   unlisteners.push(
+    await listen<string>("grok-stdout-chunk", (ev) => {
+      appendStreamChunk(ev.payload);
+      flushStreamingUi(false);
+    }),
+  );
+
+  unlisteners.push(
     await listen<string>("grok-stderr", (ev) => {
       const line = cleanTerminalText(ev.payload);
       // Always keep stderr in the raw buffer (prefixed) for later reveal.
@@ -329,12 +359,25 @@ export async function bindGrokEvents(): Promise<void> {
   );
 
   unlisteners.push(
+    await listen<PermissionRequest>("grok-permission-request", (ev) => {
+      pendingPermission.set(ev.payload);
+    }),
+  );
+
+  unlisteners.push(
+    await listen<string>("grok-permission-resolved", (ev) => {
+      pendingPermission.update((request) => (request?.request_id === ev.payload ? null : request));
+    }),
+  );
+
+  unlisteners.push(
     await listen<{
       exit_code: number;
       cancelled: boolean;
       success: boolean;
       stop_reason?: string | null;
     }>("grok-done", async (ev) => {
+      pendingPermission.set(null);
       const permissionBlocked = ev.payload.stop_reason === "permission_cancelled";
       const agentCancelled =
         !ev.payload.cancelled && !ev.payload.success && ev.payload.stop_reason === "cancelled";
@@ -437,6 +480,20 @@ export async function bindGrokEvents(): Promise<void> {
       }
     }),
   );
+}
+
+export async function resolvePermission(optionId: string | null): Promise<void> {
+  const request = get(pendingPermission);
+  if (!request) return;
+  try {
+    await invoke("resolve_grok_permission", {
+      requestId: request.request_id,
+      optionId,
+    });
+    pendingPermission.set(null);
+  } catch (error) {
+    showError(error);
+  }
 }
 
 export async function refreshChatList(projectId: string | null): Promise<void> {

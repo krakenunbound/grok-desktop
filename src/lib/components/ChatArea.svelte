@@ -4,6 +4,7 @@
   import ImageDropZone from "./ImageDropZone.svelte";
   import ModelSelector from "./ModelSelector.svelte";
   import YoloToggle from "./YoloToggle.svelte";
+  import PermissionPrompt from "./PermissionPrompt.svelte";
   import {
     currentChat,
     isRunning,
@@ -120,6 +121,7 @@
         <span>{elapsed}</span>
       {/if}
     </div>
+    <PermissionPrompt />
     <form class="box" onsubmit={onSubmit}>
       <ImageDropZone />
       <textarea

@@ -2,7 +2,7 @@
 
 Lightweight desktop GUI for the **Grok Build** CLI — Codex-inspired dark UI, project workspaces, explicit reasoning/access controls, rich file drop, system tray, chat history, and Grok CLI context visibility.
 
-**Current version:** 0.7.2
+**Current version:** 0.7.3
 
 **Stack:** Tauri 2 (Rust) + Svelte 5 (SvelteKit SPA)  
 **Platforms:** Windows 10/11, Linux, and macOS
@@ -116,8 +116,8 @@ npm run build
 
 | Feature            | Behavior                                                                                                                            |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Chat               | Headless turns: `grok -p ... -m ... --cwd ... --output-format plain`                                                                |
-| Approval           | Ask before actions, auto-approve edits, plan only, or full-access (`--always-approve`) profiles                                     |
+| Chat               | Conversational Grok sessions with streamed answers; ACP powers interactive approval turns                                           |
+| Approval           | Ask mode pauses on each protected action with Allow/Deny choices; auto-edit, plan-only, and full-access profiles remain available   |
 | Reasoning          | Low, medium, or high reasoning effort next to the model selector                                                                    |
 | Agent Transparency | **Default Hidden** (status only). **Verbose** streams raw output. Per-message “Show agent details”; say “show raw output”           |
 | Attachments        | Paste images or drop/select images, video, audio, documents, code, and archives; managed local copies, previews, 16/file turn cap   |

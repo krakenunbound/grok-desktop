@@ -7,14 +7,15 @@
 //! Stdout/stderr are streamed to the frontend via Tauri events.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 
 /// Live session parameters (not the OS process — process is per-turn).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +45,10 @@ pub struct GrokManager {
     pub cancel: Mutex<Option<Arc<AtomicBool>>>,
     /// Windows Job Object handle. Closing it terminates the entire tool tree.
     pub job: Mutex<Option<isize>>,
+    /// ACP sessions are kept per chat so Ask mode remains conversational.
+    pub acp_sessions: Mutex<HashMap<String, String>>,
+    /// Permission requests waiting for a decision from the GUI.
+    pub permission_requests: Mutex<HashMap<String, oneshot::Sender<Option<String>>>>,
 }
 
 impl GrokManager {
@@ -53,6 +58,8 @@ impl GrokManager {
             child: Mutex::new(None),
             cancel: Mutex::new(None),
             job: Mutex::new(None),
+            acp_sessions: Mutex::new(HashMap::new()),
+            permission_requests: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -455,7 +462,424 @@ pub async fn stop_session(manager: &GrokManager) -> Result<(), String> {
         }
         let _ = child.kill().await;
     }
+    let pending = std::mem::take(&mut *manager.permission_requests.lock().await);
+    for (_, responder) in pending {
+        let _ = responder.send(None);
+    }
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PermissionRequestPayload {
+    pub request_id: String,
+    pub title: String,
+    pub tool_call: serde_json::Value,
+    pub options: Vec<PermissionOptionPayload>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PermissionOptionPayload {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+}
+
+pub async fn resolve_permission(
+    manager: &GrokManager,
+    request_id: String,
+    option_id: Option<String>,
+) -> Result<(), String> {
+    let responder = manager
+        .permission_requests
+        .lock()
+        .await
+        .remove(&request_id)
+        .ok_or_else(|| "This approval request is no longer active.".to_string())?;
+    responder
+        .send(option_id)
+        .map_err(|_| "Grok stopped before the approval could be applied.".to_string())
+}
+
+async fn write_rpc(
+    stdin: &mut tokio::process::ChildStdin,
+    message: serde_json::Value,
+) -> Result<(), String> {
+    let mut bytes = serde_json::to_vec(&message).map_err(|e| format!("Encode ACP message: {e}"))?;
+    // Grok Build's Windows ACP reader currently requires CRLF framing.
+    // A lone LF is accepted on Unix but leaves the Windows agent waiting.
+    bytes.extend_from_slice(b"\r\n");
+    stdin
+        .write_all(&bytes)
+        .await
+        .map_err(|e| format!("Write to Grok ACP: {e}"))?;
+    stdin
+        .flush()
+        .await
+        .map_err(|e| format!("Flush Grok ACP input: {e}"))
+}
+
+async fn read_rpc_response(
+    reader: &mut tokio::io::Lines<BufReader<tokio::process::ChildStdout>>,
+    expected_id: i64,
+) -> Result<serde_json::Value, String> {
+    while let Some(line) = reader
+        .next_line()
+        .await
+        .map_err(|e| format!("Read Grok ACP response: {e}"))?
+    {
+        let value: serde_json::Value =
+            serde_json::from_str(&line).map_err(|e| format!("Invalid Grok ACP response: {e}"))?;
+        if value.get("id").and_then(serde_json::Value::as_i64) != Some(expected_id) {
+            continue;
+        }
+        if let Some(error) = value.get("error") {
+            return Err(format!("Grok ACP request failed: {error}"));
+        }
+        return Ok(value.get("result").cloned().unwrap_or_default());
+    }
+    Err("Grok ACP closed before replying.".into())
+}
+
+fn acp_text(update: &serde_json::Value) -> Option<&str> {
+    update
+        .get("content")
+        .and_then(|content| content.get("text"))
+        .and_then(serde_json::Value::as_str)
+}
+
+fn permission_payload(params: &serde_json::Value, request_id: String) -> PermissionRequestPayload {
+    let tool_call = params.get("toolCall").cloned().unwrap_or_default();
+    let title = tool_call
+        .get("title")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Grok wants to perform an action")
+        .to_string();
+    let options = params
+        .get("options")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|option| {
+            Some(PermissionOptionPayload {
+                id: option.get("optionId")?.as_str()?.to_string(),
+                name: option
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("Choose")
+                    .to_string(),
+                kind: option
+                    .get("kind")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("allow_once")
+                    .to_string(),
+            })
+        })
+        .collect();
+    PermissionRequestPayload {
+        request_id,
+        title,
+        tool_call,
+        options,
+    }
+}
+
+/// Run a turn through Grok's ACP endpoint so permission prompts can be answered by the GUI.
+async fn send_message_acp(
+    app: &AppHandle,
+    manager: &GrokManager,
+    cfg: &SessionConfig,
+    full_prompt: String,
+    binary: &Path,
+    advanced: &crate::config::AppSettings,
+) -> Result<(), String> {
+    emit_status(
+        app,
+        GrokStatus {
+            state: "running".into(),
+            detail: "Thinking…".into(),
+            yolo: false,
+            model: cfg.model.clone(),
+            running: true,
+        },
+    );
+
+    let mut args = vec!["agent".to_string(), "-m".to_string(), cfg.model.clone()];
+    if !advanced.reasoning_effort.trim().is_empty() {
+        args.push("--reasoning-effort".into());
+        args.push(advanced.reasoning_effort.clone());
+    }
+    args.push("stdio".into());
+
+    let mut command = Command::new(binary);
+    command
+        .args(&args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    if advanced.privacy_guard_enabled {
+        crate::privacy::apply_process_guard(&mut command);
+    }
+    #[cfg(windows)]
+    {
+        #[allow(unused_imports)]
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut cancel_guard = manager.cancel.lock().await;
+    let mut child_guard = manager.child.lock().await;
+    if child_guard.is_some() {
+        return Err("A Grok turn is already running. Stop it first or wait.".into());
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Failed to start Grok ACP ({}): {e}", binary.display()))?;
+    let process_id = child
+        .id()
+        .ok_or_else(|| "Grok ACP did not expose a process id".to_string())?;
+    let job = match create_kill_on_close_job(process_id) {
+        Ok(job) => job,
+        Err(error) => {
+            let _ = child.kill().await;
+            return Err(error);
+        }
+    };
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "Failed to open Grok ACP input".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to open Grok ACP output".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to open Grok ACP diagnostics".to_string())?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    *cancel_guard = Some(cancel.clone());
+    *child_guard = Some(child);
+    *manager.job.lock().await = Some(job);
+    drop(child_guard);
+    drop(cancel_guard);
+
+    let app_err = app.clone();
+    let err_handle = tokio::spawn(async move {
+        let mut lines = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_err.emit("grok-stderr", line);
+        }
+    });
+
+    let run_result = async {
+        let mut reader = BufReader::new(stdout).lines();
+        write_rpc(
+            &mut stdin,
+            serde_json::json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": 1, "clientCapabilities": {
+                    "fs": {"readTextFile": false, "writeTextFile": false}, "terminal": false
+                }}
+            }),
+        )
+        .await?;
+        let initialized = read_rpc_response(&mut reader, 1).await?;
+        let can_load = initialized
+            .pointer("/agentCapabilities/loadSession")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+
+        let chat_key = cfg
+            .chat_id
+            .clone()
+            .unwrap_or_else(|| format!("cwd:{}", cfg.cwd));
+        let prior_session = manager.acp_sessions.lock().await.get(&chat_key).cloned();
+        let mut session_id = None;
+        if can_load {
+            if let Some(prior) = prior_session {
+                write_rpc(
+                    &mut stdin,
+                    serde_json::json!({
+                        "jsonrpc": "2.0", "id": 2, "method": "session/load",
+                        "params": {"sessionId": prior, "cwd": cfg.cwd, "mcpServers": []}
+                    }),
+                )
+                .await?;
+                if read_rpc_response(&mut reader, 2).await.is_ok() {
+                    session_id = Some(prior);
+                }
+            }
+        }
+        if session_id.is_none() {
+            let rules = effective_rules(&advanced.extra_rules, &advanced.permission_mode);
+            write_rpc(
+                &mut stdin,
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": 3, "method": "session/new",
+                    "params": {"cwd": cfg.cwd, "mcpServers": [], "_meta": {"rules": rules}}
+                }),
+            )
+            .await?;
+            let result = read_rpc_response(&mut reader, 3).await?;
+            session_id = result
+                .get("sessionId")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string);
+        }
+        let session_id = session_id.ok_or_else(|| "Grok ACP did not create a session.".to_string())?;
+        manager
+            .acp_sessions
+            .lock()
+            .await
+            .insert(chat_key, session_id.clone());
+
+        write_rpc(
+            &mut stdin,
+            serde_json::json!({
+                "jsonrpc": "2.0", "id": 4, "method": "session/prompt",
+                "params": {"sessionId": session_id, "prompt": [{"type": "text", "text": full_prompt}]}
+            }),
+        )
+        .await?;
+
+        let mut privacy_cursor = crate::privacy::upload_log_cursor();
+        let mut privacy_tick = tokio::time::interval(std::time::Duration::from_millis(250));
+        let stop_reason = loop {
+            tokio::select! {
+                line = reader.next_line() => {
+                    let Some(line) = line.map_err(|e| format!("Read Grok ACP stream: {e}"))? else {
+                        return Err("Grok ACP closed before completing the turn.".into());
+                    };
+                    let value: serde_json::Value = serde_json::from_str(&line)
+                        .map_err(|e| format!("Invalid Grok ACP stream message: {e}"))?;
+                    if value.get("id").and_then(serde_json::Value::as_i64) == Some(4) {
+                        if let Some(error) = value.get("error") {
+                            return Err(format!("Grok ACP prompt failed: {error}"));
+                        }
+                        break value.pointer("/result/stopReason")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("end_turn")
+                            .to_string();
+                    }
+                    match value.get("method").and_then(serde_json::Value::as_str) {
+                        Some("session/update") => {
+                            let update = value.pointer("/params/update").cloned().unwrap_or_default();
+                            match update.get("sessionUpdate").and_then(serde_json::Value::as_str) {
+                                Some("agent_message_chunk") => {
+                                    if let Some(text) = acp_text(&update) {
+                                        let _ = app.emit("grok-stdout-chunk", text.to_string());
+                                    }
+                                }
+                                Some("agent_thought_chunk") => {
+                                    if let Some(text) = acp_text(&update) {
+                                        let _ = app.emit("grok-stderr", format!("[thought] {text}"));
+                                    }
+                                }
+                                Some("tool_call") | Some("tool_call_update") => {
+                                    let title = update.get("title").and_then(serde_json::Value::as_str)
+                                        .unwrap_or("Running a project action…");
+                                    emit_status(app, GrokStatus { state: "running".into(), detail: title.into(), yolo: false, model: cfg.model.clone(), running: true });
+                                }
+                                _ => {}
+                            }
+                        }
+                        Some("session/request_permission") => {
+                            let rpc_id = value.get("id").cloned().ok_or_else(|| "Permission request had no id.".to_string())?;
+                            let request_id = uuid::Uuid::new_v4().to_string();
+                            let payload = permission_payload(value.get("params").unwrap_or(&serde_json::Value::Null), request_id.clone());
+                            let (tx, rx) = oneshot::channel();
+                            manager.permission_requests.lock().await.insert(request_id.clone(), tx);
+                            emit_status(app, GrokStatus { state: "awaiting_permission".into(), detail: "Waiting for your approval".into(), yolo: false, model: cfg.model.clone(), running: true });
+                            app.emit("grok-permission-request", payload)
+                                .map_err(|e| format!("Show Grok approval request: {e}"))?;
+                            let decision = tokio::time::timeout(std::time::Duration::from_secs(300), rx)
+                                .await
+                                .ok()
+                                .and_then(Result::ok)
+                                .flatten();
+                            manager.permission_requests.lock().await.remove(&request_id);
+                            let outcome = match decision {
+                                Some(option_id) => serde_json::json!({"outcome": "selected", "optionId": option_id}),
+                                None => serde_json::json!({"outcome": "cancelled"}),
+                            };
+                            write_rpc(&mut stdin, serde_json::json!({"jsonrpc": "2.0", "id": rpc_id, "result": {"outcome": outcome}})).await?;
+                            let _ = app.emit("grok-permission-resolved", request_id);
+                            emit_status(app, GrokStatus { state: "running".into(), detail: "Continuing…".into(), yolo: false, model: cfg.model.clone(), running: true });
+                        }
+                        _ => {}
+                    }
+                }
+                _ = privacy_tick.tick(), if advanced.privacy_guard_enabled => {
+                    if crate::privacy::upload_started_since(&mut privacy_cursor) {
+                        return Err("Privacy Guard stopped Grok after detecting a repository-state upload event.".into());
+                    }
+                }
+            }
+            if cancel.load(Ordering::SeqCst) {
+                return Err("Cancelled".into());
+            }
+        };
+        Ok(stop_reason)
+    }
+    .await;
+
+    cancel.store(true, Ordering::SeqCst);
+    if let Some(job) = manager.job.lock().await.take() {
+        close_job(job);
+    }
+    if let Some(mut child) = manager.child.lock().await.take() {
+        let _ = child.kill().await;
+    }
+    *manager.cancel.lock().await = None;
+    let pending = std::mem::take(&mut *manager.permission_requests.lock().await);
+    for (_, responder) in pending {
+        let _ = responder.send(None);
+    }
+    let _ = err_handle.await;
+
+    let success = matches!(run_result.as_deref(), Ok("end_turn"));
+    let cancelled = run_result.as_ref().is_err_and(|error| error == "Cancelled");
+    let stop_reason = run_result.as_ref().ok().cloned();
+    let _ = app.emit(
+        "grok-done",
+        serde_json::json!({
+            "exit_code": if success { 0 } else { -1 },
+            "cancelled": cancelled,
+            "success": success,
+            "stop_reason": stop_reason,
+        }),
+    );
+    emit_status(
+        app,
+        GrokStatus {
+            state: if success {
+                "ready"
+            } else if cancelled {
+                "cancelled"
+            } else {
+                "error"
+            }
+            .into(),
+            detail: if success {
+                "Done"
+            } else if cancelled {
+                "Cancelled"
+            } else {
+                "Grok stopped"
+            }
+            .into(),
+            yolo: false,
+            model: cfg.model.clone(),
+            running: false,
+        },
+    );
+    match run_result {
+        Ok(reason) if reason == "end_turn" => Ok(()),
+        Ok(reason) => Err(format!("Grok stopped: {reason}")),
+        Err(error) => Err(error),
+    }
 }
 
 /// Run one headless Grok turn and stream output to the frontend.
@@ -512,6 +936,14 @@ pub async fn send_message(
     }
     full_prompt.push_str(&prompt);
 
+    let advanced = crate::config::load_settings();
+    // The default "Ask before actions" profile must use ACP. Headless `-p`
+    // cannot pause for a user decision and cancels permissioned tools instead.
+    if !cfg.yolo && advanced.permission_mode == "default" {
+        return send_message_acp(&app, manager.inner(), &cfg, full_prompt, &binary, &advanced)
+            .await;
+    }
+
     // Args as discrete argv entries (no shell) — avoids command injection.
     let mut args: Vec<String> = vec![
         "-p".into(),
@@ -523,8 +955,6 @@ pub async fn send_message(
         "--output-format".into(),
         "plain".into(),
     ];
-
-    let advanced = crate::config::load_settings();
 
     push_arg_value(&mut args, "--reasoning-effort", &advanced.reasoning_effort);
 
@@ -884,8 +1314,8 @@ pub async fn is_running(manager: &GrokManager) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        effective_rules, encode_session_cwd, parse_agent_turn_outcome, persisted_session_exists,
-        push_session_args, AgentTurnOutcome, PLAN_ONLY_RULES,
+        effective_rules, encode_session_cwd, parse_agent_turn_outcome, permission_payload,
+        persisted_session_exists, push_session_args, AgentTurnOutcome, PLAN_ONLY_RULES,
     };
 
     const CHAT_ID: &str = "019f5829-8992-7622-8c5d-72e56c32e489";
@@ -952,5 +1382,29 @@ mod tests {
     #[test]
     fn missing_chat_id_is_not_a_persisted_session() {
         assert!(!persisted_session_exists(r"H:\KrakenUI", None));
+    }
+
+    #[test]
+    fn maps_acp_permission_request_for_the_gui() {
+        let payload = permission_payload(
+            &serde_json::json!({
+                "toolCall": {
+                    "toolCallId": "tool-1",
+                    "title": "Write bugslist.md",
+                    "rawInput": {"path": "bugslist.md"}
+                },
+                "options": [
+                    {"optionId": "once", "name": "Allow once", "kind": "allow_once"},
+                    {"optionId": "deny", "name": "Deny", "kind": "reject_once"}
+                ]
+            }),
+            "request-1".into(),
+        );
+
+        assert_eq!(payload.request_id, "request-1");
+        assert_eq!(payload.title, "Write bugslist.md");
+        assert_eq!(payload.options.len(), 2);
+        assert_eq!(payload.options[0].id, "once");
+        assert_eq!(payload.options[1].kind, "reject_once");
     }
 }
