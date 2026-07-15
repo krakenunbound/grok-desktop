@@ -136,6 +136,96 @@ impl Default for GrokManager {
 const MAX_PROMPT_CHARS: usize = 400_000;
 const MAX_ATTACHMENT_PATHS: usize = 16;
 const MAX_MODEL_CHARS: usize = 64;
+const PLAN_ONLY_RULES: &str = "Plan-only mode is read-only. The exact workspace root in <user_info> is trusted session metadata. When the user asks to identify the project or workspace folder, answer immediately with that path; do not verify it with get_session_info, search_tool, use_tool, shell, or process tools. For other work, prefer built-in read, list, and search tools. Never announce a tool action unless you will perform it in the same turn. If a needed tool is unavailable, explain the limitation and answer from verified context when possible.";
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct AgentTurnOutcome {
+    outcome: String,
+    cancellation_category: Option<String>,
+}
+
+fn encode_session_cwd(cwd: &str) -> String {
+    let normalized = normalize_session_cwd(cwd);
+    let mut encoded = String::with_capacity(normalized.len());
+    for byte in normalized.as_bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(*byte));
+        } else {
+            use std::fmt::Write;
+            let _ = write!(encoded, "%{byte:02X}");
+        }
+    }
+    encoded
+}
+
+fn normalize_session_cwd(cwd: &str) -> String {
+    if let Some(unc) = cwd.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{unc}");
+    }
+    cwd.strip_prefix(r"\\?\").unwrap_or(cwd).to_string()
+}
+
+fn session_events_path(cwd: &str, chat_id: Option<&str>) -> Option<PathBuf> {
+    let chat_id = chat_id?;
+    let grok_home = std::env::var_os("GROK_HOME")
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".grok")))?;
+    Some(
+        grok_home
+            .join("sessions")
+            .join(encode_session_cwd(cwd))
+            .join(chat_id)
+            .join("events.jsonl"),
+    )
+}
+
+fn persisted_session_exists(cwd: &str, chat_id: Option<&str>) -> bool {
+    session_events_path(cwd, chat_id).is_some_and(|path| path.is_file())
+}
+
+fn read_agent_turn_outcome(path: Option<&Path>, cursor: u64) -> Option<AgentTurnOutcome> {
+    let path = path?;
+    let bytes = std::fs::read(path).ok()?;
+    let start = usize::try_from(cursor)
+        .ok()
+        .filter(|offset| *offset <= bytes.len())?;
+    let new_events = std::str::from_utf8(&bytes[start..]).ok()?;
+    parse_agent_turn_outcome(new_events)
+}
+
+fn parse_agent_turn_outcome(new_events: &str) -> Option<AgentTurnOutcome> {
+    for line in new_events.lines().rev() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("type").and_then(|value| value.as_str()) == Some("turn_ended") {
+            return Some(AgentTurnOutcome {
+                outcome: event
+                    .get("outcome")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                cancellation_category: event
+                    .get("cancellation_category")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string),
+            });
+        }
+    }
+    None
+}
+
+fn effective_rules(configured: &str, permission_mode: &str) -> String {
+    let configured = configured.trim();
+    if permission_mode != "plan" {
+        return configured.to_string();
+    }
+    if configured.is_empty() {
+        PLAN_ONLY_RULES.to_string()
+    } else {
+        format!("{configured}\n\n{PLAN_ONLY_RULES}")
+    }
+}
 
 fn is_allowed_grok_binary_name(path: &Path) -> bool {
     path.file_name()
@@ -323,7 +413,7 @@ pub async fn start_session(
 
     let has_prior_turn = match &prior {
         Some(p) if !cwd_changed && !chat_changed => p.has_prior_turn,
-        _ => false,
+        _ => persisted_session_exists(&cwd, chat_id.as_deref()),
     };
 
     let cfg = SessionConfig {
@@ -457,12 +547,13 @@ pub async fn send_message(
     }
     if advanced.permission_mode != "default" {
         args.push("--permission-mode".into());
-        args.push(advanced.permission_mode);
+        args.push(advanced.permission_mode.clone());
     }
     push_arg_value(&mut args, "--tools", &advanced.tools);
     push_arg_value(&mut args, "--disallowed-tools", &advanced.disallowed_tools);
     push_arg_value(&mut args, "--max-turns", &advanced.max_turns);
-    push_arg_value(&mut args, "--rules", &advanced.extra_rules);
+    let rules = effective_rules(&advanced.extra_rules, &advanced.permission_mode);
+    push_arg_value(&mut args, "--rules", &rules);
     push_repeated_lines(&mut args, "--allow", &advanced.allow_rules);
     push_repeated_lines(&mut args, "--deny", &advanced.deny_rules);
     push_session_args(&mut args, cfg.chat_id.as_deref(), cfg.has_prior_turn);
@@ -477,6 +568,13 @@ pub async fn send_message(
             running: true,
         },
     );
+
+    let events_path = session_events_path(&cfg.cwd, cfg.chat_id.as_deref());
+    let events_cursor = events_path
+        .as_deref()
+        .and_then(|path| std::fs::metadata(path).ok())
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
 
     let mut command = Command::new(&binary);
     command
@@ -651,10 +749,22 @@ pub async fn send_message(
     }
 
     let cancelled = cancel.load(Ordering::SeqCst);
-    let success = !cancelled && exit_code == 0;
+    let process_completed = !cancelled && exit_code == 0;
+    let agent_outcome = if process_completed {
+        read_agent_turn_outcome(events_path.as_deref(), events_cursor)
+    } else {
+        None
+    };
+    let agent_cancelled = agent_outcome
+        .as_ref()
+        .is_some_and(|outcome| outcome.outcome == "cancelled");
+    let permission_cancelled = agent_outcome.as_ref().is_some_and(|outcome| {
+        outcome.cancellation_category.as_deref() == Some("permission_cancelled")
+    });
+    let success = process_completed && !agent_cancelled;
 
     // Only flip continuity flag — do not clobber concurrent YOLO/model updates.
-    if success {
+    if process_completed {
         if let Some(live) = manager.config.lock().await.as_mut() {
             live.has_prior_turn = true;
         }
@@ -674,6 +784,9 @@ pub async fn send_message(
             "cancelled": cancelled,
             "success": success,
             "privacy_blocked": privacy_blocked,
+            "stop_reason": agent_outcome.as_ref().and_then(|outcome| {
+                outcome.cancellation_category.as_deref().or(Some(outcome.outcome.as_str()))
+            }),
         }),
     );
 
@@ -684,6 +797,8 @@ pub async fn send_message(
                 "error".into()
             } else if cancelled {
                 "cancelled".into()
+            } else if agent_cancelled {
+                "error".into()
             } else if success {
                 "ready".into()
             } else {
@@ -693,6 +808,10 @@ pub async fn send_message(
                 "Blocked repository upload".into()
             } else if cancelled {
                 "Cancelled".into()
+            } else if permission_cancelled {
+                "Action blocked by approval mode".into()
+            } else if agent_cancelled {
+                "Grok cancelled the turn".into()
             } else if success {
                 "Done".into()
             } else {
@@ -709,6 +828,12 @@ pub async fn send_message(
     }
     if cancelled {
         return Err("Cancelled".into());
+    }
+    if permission_cancelled {
+        return Err("Cancelled: the current approval mode blocked a required action".into());
+    }
+    if agent_cancelled {
+        return Err("Cancelled: Grok ended the turn before completing it".into());
     }
     if exit_code != 0 {
         return Err(format!("Grok exited with code {exit_code}"));
@@ -758,7 +883,10 @@ pub async fn is_running(manager: &GrokManager) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::push_session_args;
+    use super::{
+        effective_rules, encode_session_cwd, parse_agent_turn_outcome, persisted_session_exists,
+        push_session_args, AgentTurnOutcome, PLAN_ONLY_RULES,
+    };
 
     const CHAT_ID: &str = "019f5829-8992-7622-8c5d-72e56c32e489";
 
@@ -781,5 +909,48 @@ mod tests {
         let mut args = Vec::new();
         push_session_args(&mut args, None, true);
         assert_eq!(args, ["--continue"]);
+    }
+
+    #[test]
+    fn encodes_workspace_like_grok_session_storage() {
+        assert_eq!(encode_session_cwd(r"H:\KrakenUI"), "H%3A%5CKrakenUI");
+        assert_eq!(encode_session_cwd(r"\\?\H:\KrakenUI"), "H%3A%5CKrakenUI");
+        assert_eq!(
+            encode_session_cwd(r"\\?\UNC\server\share"),
+            "%5C%5Cserver%5Cshare"
+        );
+        assert_eq!(
+            encode_session_cwd(r"F:\Grok Gui\grok-desktop"),
+            "F%3A%5CGrok%20Gui%5Cgrok-desktop"
+        );
+    }
+
+    #[test]
+    fn plan_only_adds_read_only_completion_guidance() {
+        assert_eq!(effective_rules("", "plan"), PLAN_ONLY_RULES);
+        assert_eq!(
+            effective_rules("Keep replies short", "default"),
+            "Keep replies short"
+        );
+        assert!(effective_rules("Keep replies short", "plan").starts_with("Keep replies short\n\n"));
+    }
+
+    #[test]
+    fn detects_latest_permission_cancelled_turn() {
+        let old = "{\"type\":\"turn_ended\",\"outcome\":\"completed\"}\n";
+        let new = "{\"type\":\"turn_ended\",\"outcome\":\"cancelled\",\"cancellation_category\":\"permission_cancelled\"}\n";
+
+        assert_eq!(
+            parse_agent_turn_outcome(&format!("{old}{new}")),
+            Some(AgentTurnOutcome {
+                outcome: "cancelled".into(),
+                cancellation_category: Some("permission_cancelled".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn missing_chat_id_is_not_a_persisted_session() {
+        assert!(!persisted_session_exists(r"H:\KrakenUI", None));
     }
 }

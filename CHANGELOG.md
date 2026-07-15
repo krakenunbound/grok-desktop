@@ -2,6 +2,15 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## 0.7.2 - 2026-07-15
+
+### Fixed
+
+- Plan-only chats now answer project-folder identification directly from Grok's trusted session metadata instead of cancelling while trying to rediscover the same path through a permission-gated tool.
+- Grok Build turns that end with `permission_cancelled` are no longer presented as successful or labelled `Done`.
+- Approval-mode blocks now produce a clear explanation and preserve session continuity for a safe retry in a less restrictive mode.
+- Existing chats now resume their Grok session correctly after Grok Desktop restarts instead of trying to recreate an already-used session ID.
+
 ## 0.7.1 - 2026-07-15
 
 ### Fixed

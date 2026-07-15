@@ -329,82 +329,94 @@ export async function bindGrokEvents(): Promise<void> {
   );
 
   unlisteners.push(
-    await listen<{ exit_code: number; cancelled: boolean; success: boolean }>(
-      "grok-done",
-      async (ev) => {
-        isRunning.set(false);
-        runningSince.set(null);
-        status.update((s) => ({
-          ...s,
-          state: ev.payload.cancelled ? "cancelled" : ev.payload.success ? "ready" : "error",
-          detail: ev.payload.cancelled
+    await listen<{
+      exit_code: number;
+      cancelled: boolean;
+      success: boolean;
+      stop_reason?: string | null;
+    }>("grok-done", async (ev) => {
+      const permissionBlocked = ev.payload.stop_reason === "permission_cancelled";
+      const agentCancelled =
+        !ev.payload.cancelled && !ev.payload.success && ev.payload.stop_reason === "cancelled";
+      isRunning.set(false);
+      runningSince.set(null);
+      status.update((s) => ({
+        ...s,
+        state: ev.payload.cancelled ? "cancelled" : ev.payload.success ? "ready" : "error",
+        detail: permissionBlocked
+          ? "Action blocked by approval mode"
+          : ev.payload.cancelled || agentCancelled
             ? "Cancelled"
             : ev.payload.success
               ? "Done"
               : `Exit code ${ev.payload.exit_code}`,
-          running: false,
-        }));
-        flushStreamingUi(true);
-        const buffer = get(streamBuffer);
-        streamBuffer.set("");
-        const verbose = get(verboseMode);
+        running: false,
+      }));
+      flushStreamingUi(true);
+      const buffer = get(streamBuffer);
+      streamBuffer.set("");
+      const verbose = get(verboseMode);
 
-        currentChat.update((chat) => {
-          if (!chat) return chat;
-          const msgs = [...chat.messages];
-          const last = msgs[msgs.length - 1];
-          if (last?.role === "assistant" && last.streaming) {
-            let finalContent: string;
-            if (ev.payload.cancelled) {
-              finalContent = "Cancelled.";
-            } else if (!ev.payload.success && !buffer) {
-              finalContent = `Grok exited with code ${ev.payload.exit_code}.`;
-            } else if (verbose) {
-              finalContent = buffer || last.content;
-            } else {
-              // Hidden: product-facing reply; raw kept for reveal.
-              finalContent = extractFinalReply(buffer) || last.content || "No response.";
-            }
-
-            msgs[msgs.length - 1] = {
-              ...last,
-              content: finalContent,
-              rawContent: buffer || last.rawContent || finalContent,
-              streaming: false,
-              phaseLabel: undefined,
-              status: ev.payload.success ? "ok" : "error",
-              // Keep raw collapsed unless already verbose for this session feel.
-              rawVisible: verbose ? true : last.rawVisible === true,
-            };
-            return { ...chat, messages: msgs };
+      currentChat.update((chat) => {
+        if (!chat) return chat;
+        const msgs = [...chat.messages];
+        const last = msgs[msgs.length - 1];
+        if (last?.role === "assistant" && last.streaming) {
+          let finalContent: string;
+          if (ev.payload.cancelled) {
+            finalContent = "Cancelled.";
+          } else if (permissionBlocked) {
+            finalContent =
+              "This turn reached an action that the current approval mode could not authorize, so Grok stopped without completing the request. No changes were made. Use Ask before actions for normal project exploration, or Full access only when you trust the project, then retry.";
+          } else if (agentCancelled) {
+            finalContent = "Grok cancelled the turn before completing the request. Please retry.";
+          } else if (!ev.payload.success && !buffer) {
+            finalContent = `Grok exited with code ${ev.payload.exit_code}.`;
+          } else if (verbose) {
+            finalContent = buffer || last.content;
+          } else {
+            // Hidden: product-facing reply; raw kept for reveal.
+            finalContent = extractFinalReply(buffer) || last.content || "No response.";
           }
-          return chat;
-        });
 
-        const chat = get(currentChat);
-        if (chat) {
-          const last = chat.messages[chat.messages.length - 1];
-          if (last?.role === "assistant" && !last.streaming) {
-            try {
-              // Persist product content; raw is session-local for now (JSON shape may omit extra fields).
-              await invokeWithRetry("append_chat_message", {
-                chatId: chat.id,
-                messageId: last.id,
-                role: "assistant",
-                content: last.content,
-                images: [],
-                status: last.status ?? null,
-              });
-            } catch (e) {
-              debugWarn("persist assistant", e);
-              showError(
-                `The response is visible but could not be saved to chat history. ${humanizeError(e)}`,
-              );
-            }
+          msgs[msgs.length - 1] = {
+            ...last,
+            content: finalContent,
+            rawContent: buffer || last.rawContent || finalContent,
+            streaming: false,
+            phaseLabel: undefined,
+            status: ev.payload.success ? "ok" : "error",
+            // Keep raw collapsed unless already verbose for this session feel.
+            rawVisible: verbose ? true : last.rawVisible === true,
+          };
+          return { ...chat, messages: msgs };
+        }
+        return chat;
+      });
+
+      const chat = get(currentChat);
+      if (chat) {
+        const last = chat.messages[chat.messages.length - 1];
+        if (last?.role === "assistant" && !last.streaming) {
+          try {
+            // Persist product content; raw is session-local for now (JSON shape may omit extra fields).
+            await invokeWithRetry("append_chat_message", {
+              chatId: chat.id,
+              messageId: last.id,
+              role: "assistant",
+              content: last.content,
+              images: [],
+              status: last.status ?? null,
+            });
+          } catch (e) {
+            debugWarn("persist assistant", e);
+            showError(
+              `The response is visible but could not be saved to chat history. ${humanizeError(e)}`,
+            );
           }
         }
-      },
-    ),
+      }
+    }),
   );
 
   unlisteners.push(
