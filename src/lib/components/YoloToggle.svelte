@@ -5,6 +5,8 @@
 
   type AccessChoice = "ask" | "edits" | "plan" | "full";
   let open = $state(false);
+  let container: HTMLDivElement;
+  let closeTimer: number | undefined;
   let choice = $derived<AccessChoice>(
     $yoloEnabled
       ? "full"
@@ -23,6 +25,7 @@
   };
 
   async function select(next: AccessChoice) {
+    cancelClose();
     open = false;
     const yolo = next === "full";
     const permissionMode: PermissionMode =
@@ -39,17 +42,52 @@
       /* The next session start will use the selection. */
     }
   }
+
+  function cancelClose() {
+    if (closeTimer !== undefined) {
+      window.clearTimeout(closeTimer);
+      closeTimer = undefined;
+    }
+  }
+
+  function scheduleClose() {
+    cancelClose();
+    closeTimer = window.setTimeout(() => {
+      open = false;
+      closeTimer = undefined;
+    }, 220);
+  }
+
+  function closeOutside(event: MouseEvent) {
+    if (!container?.contains(event.target as Node)) {
+      cancelClose();
+      open = false;
+    }
+  }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions: mouseleave only dismisses a menu that remains fully keyboard/click operable -->
-<div class="access" onmouseleave={() => (open = false)}>
+<svelte:window
+  onclick={closeOutside}
+  onkeydown={(event) => {
+    if (event.key === "Escape") {
+      cancelClose();
+      open = false;
+    }
+  }}
+/>
+
+<!-- svelte-ignore a11y_no_static_element_interactions: hover behavior supplements fully keyboard/click-operable controls -->
+<div class="access" bind:this={container} onmouseenter={cancelClose} onmouseleave={scheduleClose}>
   <button
     type="button"
     class="trigger"
     class:full={choice === "full"}
     class:plan={choice === "plan"}
     onclick={() => (open = !open)}
-    onmouseenter={() => (open = true)}
+    onmouseenter={() => {
+      cancelClose();
+      open = true;
+    }}
     aria-haspopup="menu"
     aria-expanded={open}
     title="Choose what Grok may do without asking"
@@ -61,16 +99,40 @@
 
   {#if open}
     <div class="menu" role="menu" aria-label="Approval mode">
-      <button type="button" class:active={choice === "ask"} onclick={() => select("ask")}>
+      <button
+        type="button"
+        role="menuitemradio"
+        aria-checked={choice === "ask"}
+        class:active={choice === "ask"}
+        onclick={() => select("ask")}
+      >
         <strong>Ask before actions</strong><small>Confirm protected tool calls</small>
       </button>
-      <button type="button" class:active={choice === "edits"} onclick={() => select("edits")}>
+      <button
+        type="button"
+        role="menuitemradio"
+        aria-checked={choice === "edits"}
+        class:active={choice === "edits"}
+        onclick={() => select("edits")}
+      >
         <strong>Auto-approve edits</strong><small>Write files; ask for riskier actions</small>
       </button>
-      <button type="button" class:active={choice === "plan"} onclick={() => select("plan")}>
+      <button
+        type="button"
+        role="menuitemradio"
+        aria-checked={choice === "plan"}
+        class:active={choice === "plan"}
+        onclick={() => select("plan")}
+      >
         <strong>Plan only</strong><small>Explore and propose before changing files</small>
       </button>
-      <button type="button" class:active={choice === "full"} onclick={() => select("full")}>
+      <button
+        type="button"
+        role="menuitemradio"
+        aria-checked={choice === "full"}
+        class:active={choice === "full"}
+        onclick={() => select("full")}
+      >
         <strong>Full access</strong><small>Always approve all tool executions</small>
       </button>
     </div>
@@ -121,6 +183,14 @@
     border-radius: 11px;
     background: var(--surface);
     box-shadow: 0 16px 45px rgba(0, 0, 0, 0.48);
+  }
+  .menu::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -0.45rem;
+    height: 0.5rem;
   }
   .menu button {
     width: 100%;

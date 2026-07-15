@@ -2,6 +2,14 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## 0.7.1 - 2026-07-15
+
+### Fixed
+
+- Approval-mode options no longer disappear while the pointer crosses the gap between the composer button and its menu.
+- The approval menu now uses a hover bridge and brief close delay, while outside click and Escape dismissal remain immediate.
+- Approval choices expose proper radio-menu semantics to assistive technologies.
+
 ## 0.7.0 - 2026-07-14
 
 ### Added
