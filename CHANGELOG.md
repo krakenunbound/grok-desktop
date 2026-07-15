@@ -4,6 +4,8 @@ All notable changes to Grok Desktop are tracked here.
 
 ## Unreleased
 
+## 0.8.0 - 2026-07-15
+
 ### Changed
 
 - Usage refresh now calls Grok Build's authenticated `x.ai/billing` ACP extension directly instead of starting a temporary TUI and waiting for a telemetry-log side effect. Older CLIs retain the bounded log fallback.

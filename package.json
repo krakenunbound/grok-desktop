@@ -1,6 +1,6 @@
 {
   "name": "grok-desktop",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "description": "Lightweight desktop GUI for Grok Build CLI",
   "type": "module",
   "scripts": {
