@@ -113,6 +113,19 @@
     </section>
 
     <section>
+      <div class="label">Grok Build runtime</div>
+      <div class="value">
+        <div>
+          v{$cliOverview.version || "unknown"} · {$cliOverview.channel || "unknown channel"}
+        </div>
+        {#if $cliOverview.commit}<div class="path">Commit {$cliOverview.commit}</div>{/if}
+        <div class="chips">
+          <span>{$cliOverview.compatibility || "Compatibility unknown"}</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
       <div class="label">Grok CLI Capabilities</div>
       <div class="cap-list">
         {#each $cliOverview.capabilities as item (item.name)}

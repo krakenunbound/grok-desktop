@@ -5,11 +5,14 @@
     agentRuns,
     agentsError,
     bindAgentEvents,
+    clearFinishedActivities,
     closeAgentTab,
+    closeGrokActivity,
     createAgent,
     dispatchAgent,
     loadAgentDefinitions,
     stopAgent,
+    grokActivities,
   } from "$lib/stores/agents";
   import { activeProject } from "$lib/stores/projects";
   import { selectedModel, yoloEnabled } from "$lib/stores/chat";
@@ -30,7 +33,14 @@
   let newScope = $state<"project" | "user">("project");
   let cwd = $derived($activeProject?.path ?? fallbackCwd);
   let activeRun = $derived($agentRuns.find((run) => run.id === $activeAgentRunId) ?? null);
-  let runningCount = $derived($agentRuns.filter((run) => run.status === "running").length);
+  let activeActivity = $derived(
+    $grokActivities.find((activity) => activity.id === $activeAgentRunId) ?? null,
+  );
+  let runningCount = $derived(
+    $agentRuns.filter((run) => run.status === "running").length +
+      $grokActivities.filter((activity) => activity.status === "running").length,
+  );
+  let itemCount = $derived($agentRuns.length + $grokActivities.length);
 
   $effect(() => {
     if (open && cwd) {
@@ -87,8 +97,8 @@
     <div class="workspace" role="dialog" aria-modal="true" aria-labelledby="agents-title">
       <header>
         <div>
-          <h2 id="agents-title">Agents <span>{$agentRuns.length}</span></h2>
-          <p>{runningCount} working · {$agentRuns.length - runningCount} idle</p>
+          <h2 id="agents-title">Agents <span>{itemCount}</span></h2>
+          <p>{runningCount} working · {itemCount - runningCount} finished</p>
         </div>
         <div class="header-actions">
           <button type="button" onclick={() => (creating = !creating)}>+ Agent definition</button>
@@ -144,9 +154,30 @@
               onclick={() => closeAgentTab(run.id)}>×</button
             >
           </div>
-        {:else}
-          <span class="empty-tabs">Dispatch a task to create an agent tab.</span>
         {/each}
+        {#each $grokActivities as activity (activity.id)}
+          <div class="tab lifecycle" class:active={activity.id === $activeAgentRunId}>
+            <button
+              type="button"
+              class="tab-main"
+              onclick={() => activeAgentRunId.set(activity.id)}
+            >
+              <span class:working={activity.status === "running"} class="dot"></span>
+              <span>{activity.label}</span>
+              <small>{activity.kind}</small>
+            </button>
+            <button
+              type="button"
+              class="tab-close"
+              disabled={activity.status === "running"}
+              aria-label={`Close ${activity.label} activity`}
+              onclick={() => closeGrokActivity(activity.id)}>×</button
+            >
+          </div>
+        {/each}
+        {#if itemCount === 0}
+          <span class="empty-tabs">Dispatch a task to create an agent tab.</span>
+        {/if}
       </nav>
 
       <main>
@@ -164,6 +195,27 @@
           </div>
           <pre>{activeRun.output ||
               (activeRun.status === "running" ? "Agent is starting…" : "No output returned.")}</pre>
+        {:else if activeActivity}
+          <div class="run-head">
+            <div>
+              <strong>{activeActivity.label}</strong>
+              <small>
+                {activeActivity.kind} · {activeActivity.status} · session {activeActivity.session_id}
+              </small>
+            </div>
+            <span class:working={activeActivity.status === "running"} class="activity-state">
+              {activeActivity.status}
+            </span>
+          </div>
+          <div class="activity-detail">
+            <strong>Live Grok activity</strong>
+            <p>{activeActivity.detail || "Grok has not published additional details."}</p>
+            <small>Updated {new Date(activeActivity.occurred_at).toLocaleString()}</small>
+            <p class="activity-note">
+              This tab is driven by Grok Build’s task and subagent lifecycle notifications, not
+              inferred terminal text.
+            </p>
+          </div>
         {:else}
           <div class="empty-state">
             <strong>Parallel Grok agents</strong>
@@ -175,6 +227,11 @@
       {#if $agentsError}<div class="error" role="alert">{$agentsError}</div>{/if}
 
       <footer>
+        {#if $grokActivities.some((activity) => activity.status !== "running")}
+          <button type="button" class="clear" onclick={clearFinishedActivities}
+            >Clear finished</button
+          >
+        {/if}
         <select bind:value={selectedAgent} title="Agent definition">
           <option value="">Default Grok agent</option>
           {#each $agentDefinitions as agent (agent.name)}
@@ -333,6 +390,9 @@
     border-color: var(--accent-dim);
     background: var(--surface);
   }
+  .tab.lifecycle {
+    border-style: dashed;
+  }
   .tab-main {
     display: flex;
     align-items: center;
@@ -401,6 +461,42 @@
   .stop {
     color: #ffaea5;
     border-color: rgba(255, 100, 90, 0.45);
+  }
+  .activity-state {
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 0.7rem;
+    text-transform: capitalize;
+  }
+  .activity-state.working {
+    border-color: var(--accent-dim);
+    color: var(--accent);
+  }
+  .activity-detail {
+    flex: 1;
+    display: grid;
+    align-content: center;
+    gap: 0.55rem;
+    padding: 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+  .activity-detail p,
+  .activity-detail small {
+    margin: 0;
+    color: var(--muted);
+  }
+  .activity-note {
+    max-width: 620px;
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+  footer .clear {
+    flex: 0 0 auto;
+    color: var(--muted);
   }
   pre {
     flex: 1;

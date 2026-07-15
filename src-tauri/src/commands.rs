@@ -459,6 +459,15 @@ pub async fn resolve_grok_permission(
 }
 
 #[tauri::command]
+pub async fn resolve_grok_interaction(
+    manager: State<'_, GrokManager>,
+    request_id: String,
+    response: serde_json::Value,
+) -> Result<(), String> {
+    grok_process::resolve_interaction(manager.inner(), request_id, response).await
+}
+
+#[tauri::command]
 pub async fn set_session_yolo(
     manager: State<'_, GrokManager>,
     yolo: bool,

@@ -46,6 +46,10 @@ export interface GrokCliCapability {
 }
 
 export interface GrokCliOverview {
+  version: string;
+  commit: string;
+  channel: string;
+  compatibility: string;
   sessions: GrokCliSession[];
   worktrees: GrokCliWorktree[];
   capabilities: GrokCliCapability[];
@@ -59,6 +63,10 @@ export const inventory = writable<GrokInventory>({
 });
 
 export const cliOverview = writable<GrokCliOverview>({
+  version: "",
+  commit: "",
+  channel: "",
+  compatibility: "",
   sessions: [],
   worktrees: [],
   capabilities: [],

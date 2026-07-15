@@ -111,6 +111,40 @@ pub async fn set_coding_data_retention(
     }
 
     let binary = crate::grok_process::resolve_grok_binary(grok_binary_override)?;
+    let direct = crate::grok_acp::request_extension(
+        &binary,
+        "x.ai/privacy/setCodingDataRetention",
+        serde_json::json!({"codingDataRetentionOptOut": opt_out}),
+        Duration::from_secs(20),
+    )
+    .await;
+    if let Ok(response) = direct {
+        let confirmed = response
+            .get("codingDataRetentionOptOut")
+            .and_then(Value::as_bool);
+        if confirmed != Some(opt_out) {
+            return Err("Grok returned an unexpected data-retention state".into());
+        }
+        // The extension persists the account cache after the server accepts
+        // the change. Give that atomic save a short window to become visible.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        while tokio::time::Instant::now() < deadline {
+            if account_retention_opt_out() == Some(opt_out) {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(75)).await;
+        }
+        return Err(
+            "Grok changed data retention but did not update its local account state".into(),
+        );
+    }
+
+    // Compatibility path for Grok versions predating the privacy ACP
+    // extension. Keep this until the minimum supported CLI version advances.
+    set_coding_data_retention_legacy(&binary, opt_out).await
+}
+
+async fn set_coding_data_retention_legacy(binary: &Path, opt_out: bool) -> Result<(), String> {
     let slash_command = if opt_out {
         "/privacy opt-out"
     } else {

@@ -1,4 +1,7 @@
-//! Read-only Grok subscription/credit usage from the CLI's local telemetry log.
+//! Read-only Grok subscription/credit usage from Grok Build's billing extension.
+//!
+//! Current CLIs expose `x.ai/billing` over ACP. The bounded telemetry reader is
+//! retained only as a compatibility fallback for older installations.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -51,9 +54,44 @@ pub fn load_usage() -> UsageSnapshot {
 }
 
 pub async fn refresh_usage(grok_binary_override: &str) -> Result<UsageSnapshot, String> {
+    let binary = crate::grok_process::resolve_grok_binary(grok_binary_override)?;
+    let direct_result = crate::grok_acp::request_extension(
+        &binary,
+        "x.ai/billing",
+        serde_json::json!({}),
+        Duration::from_secs(20),
+    )
+    .await;
+    if let Ok(response) = &direct_result {
+        if let Some(snapshot) = parse_usage_response(
+            response,
+            Some(chrono::Utc::now().to_rfc3339()),
+            "Grok billing API",
+            "Fetched directly from Grok Build's authenticated billing extension.",
+        ) {
+            return Ok(snapshot);
+        }
+    }
+
+    let direct_error = direct_result
+        .err()
+        .unwrap_or_else(|| "Grok returned an empty billing configuration".into());
+    let cached = load_usage();
+    if cached.available {
+        return Ok(UsageSnapshot {
+            detail: format!(
+                "Direct billing is unavailable ({direct_error}); showing the latest compatible CLI snapshot."
+            ),
+            ..cached
+        });
+    }
+
+    refresh_usage_legacy(&binary).await
+}
+
+async fn refresh_usage_legacy(binary: &std::path::Path) -> Result<UsageSnapshot, String> {
     let before = load_usage();
     let previous_update = before.updated_at.clone();
-    let binary = crate::grok_process::resolve_grok_binary(grok_binary_override)?;
     let mut command = tokio::process::Command::new(binary);
     command
         .arg("--no-alt-screen")
@@ -137,28 +175,48 @@ fn load_usage_from_path(path: Option<PathBuf>) -> UsageSnapshot {
         let Ok(event) = serde_json::from_str::<Value>(line) else {
             continue;
         };
-        let Some(config) = event.pointer("/ctx/config") else {
+        let Some(context) = event.get("ctx") else {
             continue;
         };
-        let usage_percent = number(config.get("creditUsagePercent")).clamp(0.0, 100.0);
-        return UsageSnapshot {
-            available: true,
-            usage_percent,
-            remaining_percent: (100.0 - usage_percent).clamp(0.0, 100.0),
-            period_start: string(config.pointer("/currentPeriod/start"))
-                .or_else(|| string(config.get("billingPeriodStart"))),
-            period_end: string(config.pointer("/currentPeriod/end"))
-                .or_else(|| string(config.get("billingPeriodEnd"))),
-            prepaid_balance_cents: integer(config.pointer("/prepaidBalance/val")),
-            on_demand_used_cents: integer(config.pointer("/onDemandUsed/val")),
-            on_demand_cap_cents: integer(config.pointer("/onDemandCap/val")),
-            subscription_tier: string(config.get("subscriptionTier")),
-            updated_at: string(event.get("ts")),
-            source: "Grok CLI telemetry".into(),
-            detail: "Read from Grok's local billing telemetry; refreshes when the CLI publishes a new snapshot.".into(),
-        };
+        if let Some(snapshot) = parse_usage_response(
+            context,
+            string(event.get("ts")),
+            "Grok CLI telemetry",
+            "Read from Grok's local billing telemetry compatibility cache.",
+        ) {
+            return snapshot;
+        }
     }
     UsageSnapshot::default()
+}
+
+fn parse_usage_response(
+    response: &Value,
+    updated_at: Option<String>,
+    source: &str,
+    detail: &str,
+) -> Option<UsageSnapshot> {
+    let config = response.get("config")?;
+    if config.is_null() {
+        return None;
+    }
+    let usage_percent = number(config.get("creditUsagePercent")).clamp(0.0, 100.0);
+    Some(UsageSnapshot {
+        available: true,
+        usage_percent,
+        remaining_percent: (100.0 - usage_percent).clamp(0.0, 100.0),
+        period_start: string(config.pointer("/currentPeriod/start"))
+            .or_else(|| string(config.get("billingPeriodStart"))),
+        period_end: string(config.pointer("/currentPeriod/end"))
+            .or_else(|| string(config.get("billingPeriodEnd"))),
+        prepaid_balance_cents: integer(config.pointer("/prepaidBalance/val")),
+        on_demand_used_cents: integer(config.pointer("/onDemandUsed/val")),
+        on_demand_cap_cents: integer(config.pointer("/onDemandCap/val")),
+        subscription_tier: string(response.get("subscriptionTier")),
+        updated_at,
+        source: source.into(),
+        detail: detail.into(),
+    })
 }
 
 fn number(value: Option<&Value>) -> f64 {
@@ -187,7 +245,7 @@ fn string(value: Option<&Value>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::load_usage_from_path;
+    use super::{load_usage_from_path, parse_usage_response};
     use std::fs;
     use uuid::Uuid;
 
@@ -196,7 +254,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("grok-usage-{}.jsonl", Uuid::new_v4()));
         let events = concat!(
             "{\"msg\":\"billing: fetched credits config\",\"ts\":\"old\",\"ctx\":{\"config\":{\"creditUsagePercent\":10}}}\n",
-            "{\"msg\":\"billing: fetched credits config\",\"ts\":\"new\",\"ctx\":{\"config\":{\"creditUsagePercent\":82,\"currentPeriod\":{\"start\":\"start\",\"end\":\"end\"},\"prepaidBalance\":{\"val\":1250},\"onDemandUsed\":{\"val\":325},\"onDemandCap\":{\"val\":5000},\"subscriptionTier\":\"Premium\"}}}\n"
+            "{\"msg\":\"billing: fetched credits config\",\"ts\":\"new\",\"ctx\":{\"config\":{\"creditUsagePercent\":82,\"currentPeriod\":{\"start\":\"start\",\"end\":\"end\"},\"prepaidBalance\":{\"val\":1250},\"onDemandUsed\":{\"val\":325},\"onDemandCap\":{\"val\":5000}},\"subscriptionTier\":\"Premium\"}}\n"
         );
         fs::write(&path, events).expect("write telemetry fixture");
         let usage = load_usage_from_path(Some(path.clone()));
@@ -205,7 +263,30 @@ mod tests {
         assert_eq!(usage.remaining_percent, 18.0);
         assert_eq!(usage.prepaid_balance_cents, 1250);
         assert_eq!(usage.on_demand_used_cents, 325);
+        assert_eq!(usage.subscription_tier.as_deref(), Some("Premium"));
         assert_eq!(usage.updated_at.as_deref(), Some("new"));
         fs::remove_file(path).expect("remove telemetry fixture");
+    }
+
+    #[test]
+    fn parses_direct_billing_contract() {
+        let response = serde_json::json!({
+            "config": {
+                "creditUsagePercent": 12.5,
+                "currentPeriod": {"start": "a", "end": "b"},
+                "prepaidBalance": {"val": 2500},
+                "onDemandUsed": {"val": 75},
+                "onDemandCap": {"val": 1000}
+            },
+            "subscriptionTier": "SuperGrok Heavy",
+            "onDemandEnabled": true
+        });
+        let usage = parse_usage_response(&response, Some("now".into()), "direct", "ok")
+            .expect("billing config");
+        assert_eq!(usage.usage_percent, 12.5);
+        assert_eq!(usage.remaining_percent, 87.5);
+        assert_eq!(usage.prepaid_balance_cents, 2500);
+        assert_eq!(usage.subscription_tier.as_deref(), Some("SuperGrok Heavy"));
+        assert_eq!(usage.source, "direct");
     }
 }

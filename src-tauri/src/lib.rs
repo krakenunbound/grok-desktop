@@ -4,6 +4,7 @@ mod agent_runs;
 mod capabilities;
 mod commands;
 mod config;
+mod grok_acp;
 mod grok_cli;
 mod grok_process;
 mod image_handler;
@@ -266,6 +267,7 @@ pub fn run() {
             commands::start_grok_session,
             commands::send_message,
             commands::resolve_grok_permission,
+            commands::resolve_grok_interaction,
             commands::stop_session,
             commands::set_session_yolo,
             commands::set_session_model,

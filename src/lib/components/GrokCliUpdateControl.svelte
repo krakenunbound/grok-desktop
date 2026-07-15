@@ -4,9 +4,9 @@
 
   interface GrokUpdateStatus {
     currentVersion: string;
-    latestVersion: string;
+    latestVersion: string | null;
     updateAvailable: boolean;
-    installer: string;
+    installer: string | null;
     channel: string;
     autoUpdate: boolean;
     error: string | null;
@@ -65,7 +65,7 @@
     error = "";
     message = "";
     try {
-      const target = status.latestVersion;
+      const target = status.latestVersion ?? "update";
       status = await invoke<GrokUpdateStatus>("install_grok_cli_update");
       onstatus(status.updateAvailable);
       confirmInstall = false;
@@ -104,7 +104,7 @@
       {#if status}
         <div class="versions">
           <div><span>Installed</span><strong>{status.currentVersion}</strong></div>
-          <div><span>Latest</span><strong>{status.latestVersion}</strong></div>
+          <div><span>Latest</span><strong>{status.latestVersion ?? "Unavailable"}</strong></div>
           <div><span>Channel</span><strong>{status.channel}</strong></div>
         </div>
 

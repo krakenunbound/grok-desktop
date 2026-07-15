@@ -141,6 +141,7 @@ Browser-capable MCP servers such as Playwright can be detected and shown when Gr
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Upstream compatibility](docs/UPSTREAM_COMPATIBILITY.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Screenshots](docs/SCREENSHOTS.md)
 - [Contributing](CONTRIBUTING.md)

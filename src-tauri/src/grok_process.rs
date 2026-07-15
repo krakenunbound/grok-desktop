@@ -49,6 +49,19 @@ pub struct GrokManager {
     pub acp_sessions: Mutex<HashMap<String, String>>,
     /// Permission requests waiting for a decision from the GUI.
     pub permission_requests: Mutex<HashMap<String, oneshot::Sender<Option<String>>>>,
+    /// Grok-specific blocking questions and plan approvals waiting on the GUI.
+    interaction_requests: Mutex<HashMap<String, PendingInteraction>>,
+}
+
+struct PendingInteraction {
+    kind: InteractionKind,
+    responder: oneshot::Sender<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InteractionKind {
+    Question,
+    PlanApproval,
 }
 
 impl GrokManager {
@@ -60,6 +73,7 @@ impl GrokManager {
             job: Mutex::new(None),
             acp_sessions: Mutex::new(HashMap::new()),
             permission_requests: Mutex::new(HashMap::new()),
+            interaction_requests: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -466,6 +480,7 @@ pub async fn stop_session(manager: &GrokManager) -> Result<(), String> {
     for (_, responder) in pending {
         let _ = responder.send(None);
     }
+    cancel_interactions(manager).await;
     Ok(())
 }
 
@@ -484,6 +499,149 @@ pub struct PermissionOptionPayload {
     pub kind: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct InteractionRequestPayload {
+    pub request_id: String,
+    pub kind: String,
+    pub session_id: String,
+    pub tool_call_id: String,
+    pub mode: Option<String>,
+    pub questions: Vec<serde_json::Value>,
+    pub plan_content: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GrokLifecycleEvent {
+    pub id: String,
+    pub session_id: String,
+    pub kind: String,
+    pub label: String,
+    pub status: String,
+    pub detail: String,
+    pub occurred_at: String,
+}
+
+fn lifecycle_event(method: &str, params: &serde_json::Value) -> Option<GrokLifecycleEvent> {
+    let params = params.get("params").unwrap_or(params);
+    let update = params.get("update")?;
+    let tag = update.get("sessionUpdate")?.as_str()?;
+    let session_id = params
+        .get("sessionId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let occurred_at = chrono::Utc::now().to_rfc3339();
+    match tag {
+        "task_backgrounded" => {
+            let id = update.get("task_id")?.as_str()?.to_string();
+            let label = update
+                .get("description")
+                .or_else(|| update.get("monitor_description"))
+                .or_else(|| update.get("command"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("Background task")
+                .to_string();
+            Some(GrokLifecycleEvent {
+                id: format!("task:{id}"),
+                session_id,
+                kind: "task".into(),
+                label,
+                status: "running".into(),
+                detail: update
+                    .get("cwd")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                occurred_at,
+            })
+        }
+        "task_completed" => {
+            let task = update.get("task_snapshot")?;
+            let id = task.get("task_id")?.as_str()?.to_string();
+            let exit_code = task.get("exit_code").and_then(serde_json::Value::as_i64);
+            let signal = task.get("signal").and_then(serde_json::Value::as_str);
+            let status = if signal.is_some() || exit_code.is_some_and(|code| code != 0) {
+                "failed"
+            } else {
+                "completed"
+            };
+            let label = task
+                .get("display_command")
+                .or_else(|| task.get("command"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("Background task")
+                .to_string();
+            let detail = signal.map_or_else(
+                || {
+                    exit_code
+                        .map(|code| format!("Exit code {code}"))
+                        .unwrap_or_else(|| "Finished".into())
+                },
+                |value| format!("Stopped by {value}"),
+            );
+            Some(GrokLifecycleEvent {
+                id: format!("task:{id}"),
+                session_id,
+                kind: "task".into(),
+                label,
+                status: status.into(),
+                detail,
+                occurred_at,
+            })
+        }
+        "subagent_spawned" => {
+            let id = update.get("subagent_id")?.as_str()?.to_string();
+            let label = update
+                .get("description")
+                .or_else(|| update.get("subagent_type"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("Grok subagent")
+                .to_string();
+            Some(GrokLifecycleEvent {
+                id: format!("subagent:{id}"),
+                session_id,
+                kind: "subagent".into(),
+                label,
+                status: "running".into(),
+                detail: update
+                    .get("subagent_type")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("subagent")
+                    .to_string(),
+                occurred_at,
+            })
+        }
+        "subagent_finished" => {
+            let id = update.get("subagent_id")?.as_str()?.to_string();
+            let upstream_status = update
+                .get("status")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("completed");
+            let status = match upstream_status {
+                "completed" => "completed",
+                "cancelled" | "canceled" => "cancelled",
+                _ => "failed",
+            };
+            let turns = update
+                .get("turns")
+                .and_then(serde_json::Value::as_u64)
+                .map(|value| format!("{value} turns"))
+                .unwrap_or_else(|| upstream_status.to_string());
+            Some(GrokLifecycleEvent {
+                id: format!("subagent:{id}"),
+                session_id,
+                kind: "subagent".into(),
+                label: "Grok subagent".into(),
+                status: status.into(),
+                detail: turns,
+                occurred_at,
+            })
+        }
+        _ if method.ends_with("session_notification") || method.ends_with("session/update") => None,
+        _ => None,
+    }
+}
+
 pub async fn resolve_permission(
     manager: &GrokManager,
     request_id: String,
@@ -498,6 +656,133 @@ pub async fn resolve_permission(
     responder
         .send(option_id)
         .map_err(|_| "Grok stopped before the approval could be applied.".to_string())
+}
+
+fn validate_interaction_response(
+    kind: InteractionKind,
+    response: &serde_json::Value,
+) -> Result<(), String> {
+    let outcome = response
+        .get("outcome")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "The interaction response needs an outcome.".to_string())?;
+    match (kind, outcome) {
+        (InteractionKind::Question, "cancelled") => Ok(()),
+        (InteractionKind::Question, "accepted") => {
+            let answers = response
+                .get("answers")
+                .and_then(serde_json::Value::as_object)
+                .ok_or_else(|| "Accepted questions need an answers object.".to_string())?;
+            if !answers.is_empty()
+                && answers.values().all(|answer| {
+                    answer.as_array().is_some_and(|values| {
+                        !values.is_empty() && values.iter().all(serde_json::Value::is_string)
+                    })
+                })
+            {
+                Ok(())
+            } else {
+                Err("Every answer must contain at least one text choice.".into())
+            }
+        }
+        (InteractionKind::Question, "chat_about_this" | "skip_interview") => {
+            if response.get("partial_answers").is_none_or(|answers| {
+                answers
+                    .as_object()
+                    .is_some_and(|values| values.values().all(serde_json::Value::is_string))
+            }) {
+                Ok(())
+            } else {
+                Err("Partial answers must be an object.".into())
+            }
+        }
+        (InteractionKind::PlanApproval, "approved" | "abandoned") => Ok(()),
+        (InteractionKind::PlanApproval, "cancelled") => {
+            if response
+                .get("feedback")
+                .is_none_or(serde_json::Value::is_string)
+            {
+                Ok(())
+            } else {
+                Err("Plan feedback must be text.".into())
+            }
+        }
+        _ => Err("That response is not valid for the active Grok interaction.".into()),
+    }
+}
+
+pub async fn resolve_interaction(
+    manager: &GrokManager,
+    request_id: String,
+    response: serde_json::Value,
+) -> Result<(), String> {
+    let pending = manager
+        .interaction_requests
+        .lock()
+        .await
+        .remove(&request_id)
+        .ok_or_else(|| "This Grok request is no longer active.".to_string())?;
+    if let Err(error) = validate_interaction_response(pending.kind, &response) {
+        manager
+            .interaction_requests
+            .lock()
+            .await
+            .insert(request_id, pending);
+        return Err(error);
+    }
+    pending
+        .responder
+        .send(response)
+        .map_err(|_| "Grok stopped before your response could be applied.".to_string())
+}
+
+async fn cancel_interactions(manager: &GrokManager) {
+    let pending = std::mem::take(&mut *manager.interaction_requests.lock().await);
+    for (_, interaction) in pending {
+        let response = match interaction.kind {
+            InteractionKind::Question => serde_json::json!({"outcome": "cancelled"}),
+            InteractionKind::PlanApproval => serde_json::json!({"outcome": "abandoned"}),
+        };
+        let _ = interaction.responder.send(response);
+    }
+}
+
+fn interaction_payload(
+    kind: InteractionKind,
+    params: &serde_json::Value,
+    request_id: String,
+) -> InteractionRequestPayload {
+    InteractionRequestPayload {
+        request_id,
+        kind: match kind {
+            InteractionKind::Question => "question",
+            InteractionKind::PlanApproval => "plan_approval",
+        }
+        .into(),
+        session_id: params
+            .get("sessionId")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        tool_call_id: params
+            .get("toolCallId")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        mode: params
+            .get("mode")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        questions: params
+            .get("questions")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        plan_content: params
+            .get("planContent")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+    }
 }
 
 async fn write_rpc(
@@ -679,13 +964,26 @@ async fn send_message_acp(
             &mut stdin,
             serde_json::json!({
                 "jsonrpc": "2.0", "id": 1, "method": "initialize",
-                "params": {"protocolVersion": 1, "clientCapabilities": {
+                "params": {"protocolVersion": "1", "clientCapabilities": {
                     "fs": {"readTextFile": false, "writeTextFile": false}, "terminal": false
-                }}
+                }, "_meta": {"clientType": "desktop", "clientVersion": env!("CARGO_PKG_VERSION")}}
             }),
         )
         .await?;
         let initialized = read_rpc_response(&mut reader, 1).await?;
+        let mut next_id = 2i64;
+        if let Some(method_id) = crate::grok_acp::select_auth_method(&initialized) {
+            write_rpc(
+                &mut stdin,
+                serde_json::json!({
+                    "jsonrpc": "2.0", "id": next_id, "method": "authenticate",
+                    "params": {"methodId": method_id}
+                }),
+            )
+            .await?;
+            read_rpc_response(&mut reader, next_id).await?;
+            next_id += 1;
+        }
         let can_load = initialized
             .pointer("/agentCapabilities/loadSession")
             .and_then(serde_json::Value::as_bool)
@@ -702,14 +1000,15 @@ async fn send_message_acp(
                 write_rpc(
                     &mut stdin,
                     serde_json::json!({
-                        "jsonrpc": "2.0", "id": 2, "method": "session/load",
+                        "jsonrpc": "2.0", "id": next_id, "method": "session/load",
                         "params": {"sessionId": prior, "cwd": cfg.cwd, "mcpServers": []}
                     }),
                 )
                 .await?;
-                if read_rpc_response(&mut reader, 2).await.is_ok() {
+                if read_rpc_response(&mut reader, next_id).await.is_ok() {
                     session_id = Some(prior);
                 }
+                next_id += 1;
             }
         }
         if session_id.is_none() {
@@ -717,12 +1016,13 @@ async fn send_message_acp(
             write_rpc(
                 &mut stdin,
                 serde_json::json!({
-                    "jsonrpc": "2.0", "id": 3, "method": "session/new",
+                    "jsonrpc": "2.0", "id": next_id, "method": "session/new",
                     "params": {"cwd": cfg.cwd, "mcpServers": [], "_meta": {"rules": rules}}
                 }),
             )
             .await?;
-            let result = read_rpc_response(&mut reader, 3).await?;
+            let result = read_rpc_response(&mut reader, next_id).await?;
+            next_id += 1;
             session_id = result
                 .get("sessionId")
                 .and_then(serde_json::Value::as_str)
@@ -738,14 +1038,19 @@ async fn send_message_acp(
         write_rpc(
             &mut stdin,
             serde_json::json!({
-                "jsonrpc": "2.0", "id": 4, "method": "session/prompt",
+                "jsonrpc": "2.0", "id": next_id, "method": "session/prompt",
                 "params": {"sessionId": session_id, "prompt": [{"type": "text", "text": full_prompt}]}
             }),
         )
         .await?;
+        let prompt_id = next_id;
 
         let mut privacy_cursor = crate::privacy::upload_log_cursor();
         let mut privacy_tick = tokio::time::interval(std::time::Duration::from_millis(250));
+        let mut lifecycle_tick = tokio::time::interval(std::time::Duration::from_millis(100));
+        let mut pending_work = std::collections::HashSet::<String>::new();
+        let mut completed_work = std::collections::HashSet::<String>::new();
+        let mut prompt_result: Option<(String, std::time::Instant)> = None;
         let stop_reason = loop {
             tokio::select! {
                 line = reader.next_line() => {
@@ -754,16 +1059,32 @@ async fn send_message_acp(
                     };
                     let value: serde_json::Value = serde_json::from_str(&line)
                         .map_err(|e| format!("Invalid Grok ACP stream message: {e}"))?;
-                    if value.get("id").and_then(serde_json::Value::as_i64) == Some(4) {
+                    if value.get("id").and_then(serde_json::Value::as_i64) == Some(prompt_id) {
                         if let Some(error) = value.get("error") {
                             return Err(format!("Grok ACP prompt failed: {error}"));
                         }
-                        break value.pointer("/result/stopReason")
+                        let reason = value.pointer("/result/stopReason")
                             .and_then(serde_json::Value::as_str)
                             .unwrap_or("end_turn")
                             .to_string();
+                        prompt_result = Some((reason, std::time::Instant::now()));
+                        continue;
                     }
-                    match value.get("method").and_then(serde_json::Value::as_str) {
+                    let method = value.get("method").and_then(serde_json::Value::as_str);
+                    if let (Some(method), Some(params)) = (method, value.get("params")) {
+                        if let Some(event) = lifecycle_event(method, params) {
+                            if event.status == "running" {
+                                if !completed_work.contains(&event.id) {
+                                    pending_work.insert(event.id.clone());
+                                }
+                            } else {
+                                pending_work.remove(&event.id);
+                                completed_work.insert(event.id.clone());
+                            }
+                            let _ = app.emit("grok-lifecycle-event", event);
+                        }
+                    }
+                    match method {
                         Some("session/update") => {
                             let update = value.pointer("/params/update").cloned().unwrap_or_default();
                             match update.get("sessionUpdate").and_then(serde_json::Value::as_str) {
@@ -808,12 +1129,67 @@ async fn send_message_acp(
                             let _ = app.emit("grok-permission-resolved", request_id);
                             emit_status(app, GrokStatus { state: "running".into(), detail: "Continuing…".into(), yolo: false, model: cfg.model.clone(), running: true });
                         }
+                        Some("_x.ai/ask_user_question") | Some("x.ai/ask_user_question")
+                        | Some("_x.ai/exit_plan_mode") | Some("x.ai/exit_plan_mode") => {
+                            let rpc_id = value.get("id").cloned()
+                                .ok_or_else(|| "Grok interaction request had no id.".to_string())?;
+                            let params = value.get("params").unwrap_or(&serde_json::Value::Null);
+                            let kind = if method.is_some_and(|name| name.ends_with("ask_user_question")) {
+                                InteractionKind::Question
+                            } else {
+                                InteractionKind::PlanApproval
+                            };
+                            let request_id = uuid::Uuid::new_v4().to_string();
+                            let payload = interaction_payload(kind, params, request_id.clone());
+                            let (tx, rx) = oneshot::channel();
+                            manager.interaction_requests.lock().await.insert(
+                                request_id.clone(),
+                                PendingInteraction { kind, responder: tx },
+                            );
+                            let detail = match kind {
+                                InteractionKind::Question => "Grok has a question for you",
+                                InteractionKind::PlanApproval => "Grok is waiting for plan approval",
+                            };
+                            emit_status(app, GrokStatus { state: "awaiting_input".into(), detail: detail.into(), yolo: false, model: cfg.model.clone(), running: true });
+                            app.emit("grok-interaction-request", payload)
+                                .map_err(|e| format!("Show Grok interaction request: {e}"))?;
+                            let fallback = match kind {
+                                InteractionKind::Question => serde_json::json!({"outcome": "cancelled"}),
+                                InteractionKind::PlanApproval => serde_json::json!({"outcome": "abandoned"}),
+                            };
+                            let response = tokio::time::timeout(std::time::Duration::from_secs(300), rx)
+                                .await
+                                .ok()
+                                .and_then(Result::ok)
+                                .unwrap_or(fallback);
+                            manager.interaction_requests.lock().await.remove(&request_id);
+                            write_rpc(&mut stdin, serde_json::json!({"jsonrpc": "2.0", "id": rpc_id, "result": response})).await?;
+                            let _ = app.emit("grok-interaction-resolved", request_id);
+                            emit_status(app, GrokStatus { state: "running".into(), detail: "Continuing…".into(), yolo: false, model: cfg.model.clone(), running: true });
+                        }
                         _ => {}
                     }
                 }
                 _ = privacy_tick.tick(), if advanced.privacy_guard_enabled => {
                     if crate::privacy::upload_started_since(&mut privacy_cursor) {
                         return Err("Privacy Guard stopped Grok after detecting a repository-state upload event.".into());
+                    }
+                }
+                _ = lifecycle_tick.tick(), if prompt_result.is_some() => {
+                    let settled = prompt_result.as_ref().is_some_and(|(_, completed_at)| {
+                        completed_at.elapsed() >= std::time::Duration::from_millis(350)
+                    });
+                    if settled && pending_work.is_empty() {
+                        break prompt_result.take().expect("checked prompt result").0;
+                    }
+                    if !pending_work.is_empty() {
+                        emit_status(app, GrokStatus {
+                            state: "background_work".into(),
+                            detail: format!("Waiting for {} background task{}…", pending_work.len(), if pending_work.len() == 1 { "" } else { "s" }),
+                            yolo: false,
+                            model: cfg.model.clone(),
+                            running: true,
+                        });
                     }
                 }
             }
@@ -837,6 +1213,7 @@ async fn send_message_acp(
     for (_, responder) in pending {
         let _ = responder.send(None);
     }
+    cancel_interactions(manager).await;
     let _ = err_handle.await;
 
     let success = matches!(run_result.as_deref(), Ok("end_turn"));
@@ -1314,8 +1691,9 @@ pub async fn is_running(manager: &GrokManager) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        effective_rules, encode_session_cwd, parse_agent_turn_outcome, permission_payload,
-        persisted_session_exists, push_session_args, AgentTurnOutcome, PLAN_ONLY_RULES,
+        effective_rules, encode_session_cwd, interaction_payload, lifecycle_event,
+        parse_agent_turn_outcome, permission_payload, persisted_session_exists, push_session_args,
+        validate_interaction_response, AgentTurnOutcome, InteractionKind, PLAN_ONLY_RULES,
     };
 
     const CHAT_ID: &str = "019f5829-8992-7622-8c5d-72e56c32e489";
@@ -1406,5 +1784,120 @@ mod tests {
         assert_eq!(payload.options.len(), 2);
         assert_eq!(payload.options[0].id, "once");
         assert_eq!(payload.options[1].kind, "reject_once");
+    }
+
+    #[test]
+    fn maps_background_task_lifecycle() {
+        let started = lifecycle_event(
+            "_x.ai/task_backgrounded",
+            &serde_json::json!({
+                "sessionId": "parent",
+                "update": {
+                    "sessionUpdate": "task_backgrounded",
+                    "task_id": "task-1",
+                    "command": "cargo test",
+                    "cwd": "C:/repo"
+                }
+            }),
+        )
+        .expect("background event");
+        assert_eq!(started.id, "task:task-1");
+        assert_eq!(started.label, "cargo test");
+        assert_eq!(started.status, "running");
+
+        let completed = lifecycle_event(
+            "_x.ai/task_completed",
+            &serde_json::json!({
+                "sessionId": "parent",
+                "update": {
+                    "sessionUpdate": "task_completed",
+                    "task_snapshot": {"task_id": "task-1", "command": "cargo test", "exit_code": 1}
+                }
+            }),
+        )
+        .expect("completion event");
+        assert_eq!(completed.id, started.id);
+        assert_eq!(completed.status, "failed");
+        assert_eq!(completed.detail, "Exit code 1");
+    }
+
+    #[test]
+    fn maps_nested_subagent_lifecycle() {
+        let event = lifecycle_event(
+            "_x.ai/session_notification",
+            &serde_json::json!({
+                "method": "x.ai/session_notification",
+                "params": {
+                    "sessionId": "parent",
+                    "update": {
+                        "sessionUpdate": "subagent_spawned",
+                        "subagent_id": "sub-1",
+                        "subagent_type": "explore",
+                        "description": "Inspect the parser"
+                    }
+                }
+            }),
+        )
+        .expect("subagent event");
+        assert_eq!(event.id, "subagent:sub-1");
+        assert_eq!(event.kind, "subagent");
+        assert_eq!(event.label, "Inspect the parser");
+    }
+
+    #[test]
+    fn maps_question_and_plan_interactions() {
+        let question = interaction_payload(
+            InteractionKind::Question,
+            &serde_json::json!({
+                "sessionId": "session-1",
+                "toolCallId": "tool-1",
+                "mode": "plan",
+                "questions": [{
+                    "question": "Which database?",
+                    "options": [{"label": "SQLite", "description": "Local database"}],
+                    "multiSelect": false
+                }]
+            }),
+            "request-1".into(),
+        );
+        assert_eq!(question.kind, "question");
+        assert_eq!(question.mode.as_deref(), Some("plan"));
+        assert_eq!(question.questions.len(), 1);
+
+        let plan = interaction_payload(
+            InteractionKind::PlanApproval,
+            &serde_json::json!({
+                "sessionId": "session-1",
+                "toolCallId": "tool-2",
+                "planContent": "# Safe plan"
+            }),
+            "request-2".into(),
+        );
+        assert_eq!(plan.kind, "plan_approval");
+        assert_eq!(plan.plan_content.as_deref(), Some("# Safe plan"));
+    }
+
+    #[test]
+    fn validates_only_upstream_interaction_outcomes() {
+        assert!(validate_interaction_response(
+            InteractionKind::Question,
+            &serde_json::json!({"outcome": "accepted", "answers": {"Which?": ["A"]}})
+        )
+        .is_ok());
+        assert!(validate_interaction_response(
+            InteractionKind::Question,
+            &serde_json::json!({"outcome": "accepted", "answers": {"Which?": []}})
+        )
+        .is_err());
+        assert!(validate_interaction_response(
+            InteractionKind::PlanApproval,
+            &serde_json::json!({"outcome": "cancelled", "feedback": "Revise step two"})
+        )
+        .is_ok());
+        assert!(validate_interaction_response(
+            InteractionKind::PlanApproval,
+            &serde_json::json!({"outcome": "accepted"})
+        )
+        .is_err());
     }
 }

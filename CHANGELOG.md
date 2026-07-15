@@ -2,6 +2,27 @@
 
 All notable changes to Grok Desktop are tracked here.
 
+## Unreleased
+
+### Changed
+
+- Usage refresh now calls Grok Build's authenticated `x.ai/billing` ACP extension directly instead of starting a temporary TUI and waiting for a telemetry-log side effect. Older CLIs retain the bounded log fallback.
+- Account data-retention changes now use `x.ai/privacy/setCodingDataRetention` directly, with the existing `/privacy` automation retained for backward compatibility.
+- ACP initialization now uses the upstream protocol-version type, identifies Grok Desktop as a desktop client, and follows the agent-advertised authentication method rather than assuming credentials.
+- Grok CLI update parsing now accepts the nullable `latestVersion` and `installer` fields in the official failure response contract.
+- Grok background tasks and spawned subagents now appear as structured live tabs in the Agents workspace, with running/completed/failed state driven by upstream lifecycle notifications.
+- The Context panel now shows the installed Grok Build version, source commit, release channel, and active compatibility strategy.
+- Ask-before-actions keeps its contained ACP process alive while Grok reports unfinished background work instead of ending the host process with the main response.
+- Grok's blocking `ask_user_question` interviews now render as native single-select, multi-select, and freeform forms in the composer, including plan-mode Chat and Skip paths.
+- Leaving plan mode now pauses for an in-app plan review with explicit Approve, Request changes, and Stop planning outcomes.
+
+### Fixed
+
+- Subscription tier is read from the top-level billing response, matching Grok Build's actual schema.
+- xAI ACP extensions are encoded with their required underscore-prefixed wire method while preserving the unprefixed vendor method internally.
+- Background completion events that arrive before their corresponding start event no longer re-arm an already finished task.
+- Blocking xAI question and plan requests are no longer ignored, which previously could leave an Ask-before-actions turn waiting indefinitely.
+
 ## 0.7.3 - 2026-07-15
 
 ### Fixed

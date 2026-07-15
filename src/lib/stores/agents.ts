@@ -19,6 +19,16 @@ export interface AgentRun {
   exit_code?: number;
 }
 
+export interface GrokActivity {
+  id: string;
+  session_id: string;
+  kind: "task" | "subagent";
+  label: string;
+  status: "running" | "completed" | "failed" | "cancelled";
+  detail: string;
+  occurred_at: string;
+}
+
 interface AgentRunEvent {
   run_id: string;
   kind: "status" | "stdout" | "stderr" | "done";
@@ -29,30 +39,56 @@ interface AgentRunEvent {
 
 export const agentDefinitions = writable<AgentDefinition[]>([]);
 export const agentRuns = writable<AgentRun[]>([]);
+export const grokActivities = writable<GrokActivity[]>([]);
 export const activeAgentRunId = writable<string | null>(null);
 export const agentsError = writable("");
 
 let eventBinding: Promise<UnlistenFn> | null = null;
+let lifecycleBinding: Promise<UnlistenFn> | null = null;
 
 export async function bindAgentEvents(): Promise<void> {
-  if (eventBinding) return void (await eventBinding);
-  eventBinding = listen<AgentRunEvent>("agent-run-event", ({ payload }) => {
-    agentRuns.update((runs) =>
-      runs.map((run) => {
-        if (run.id !== payload.run_id) return run;
-        const appended = payload.chunk
-          ? `${run.output}${payload.chunk}`.slice(-2_000_000)
-          : run.output;
-        return {
-          ...run,
-          output: appended,
-          status: payload.status,
-          exit_code: payload.exit_code ?? run.exit_code,
-        };
-      }),
-    );
-  });
-  await eventBinding;
+  if (!eventBinding) {
+    eventBinding = listen<AgentRunEvent>("agent-run-event", ({ payload }) => {
+      agentRuns.update((runs) =>
+        runs.map((run) => {
+          if (run.id !== payload.run_id) return run;
+          const appended = payload.chunk
+            ? `${run.output}${payload.chunk}`.slice(-2_000_000)
+            : run.output;
+          return {
+            ...run,
+            output: appended,
+            status: payload.status,
+            exit_code: payload.exit_code ?? run.exit_code,
+          };
+        }),
+      );
+    });
+  }
+  if (!lifecycleBinding) {
+    lifecycleBinding = listen<GrokActivity>("grok-lifecycle-event", ({ payload }) => {
+      grokActivities.update((activities) => {
+        const existing = activities.find((activity) => activity.id === payload.id);
+        const merged = existing
+          ? activities.map((activity) =>
+              activity.id === payload.id
+                ? {
+                    ...activity,
+                    ...payload,
+                    label:
+                      payload.label === "Background task" || payload.label === "Grok subagent"
+                        ? activity.label
+                        : payload.label,
+                  }
+                : activity,
+            )
+          : [...activities, payload];
+        return merged.slice(-100);
+      });
+      if (!get(activeAgentRunId)) activeAgentRunId.set(payload.id);
+    });
+  }
+  await Promise.all([eventBinding, lifecycleBinding]);
 }
 
 export async function loadAgentDefinitions(cwd: string): Promise<void> {
@@ -95,6 +131,19 @@ export function closeAgentTab(runId: string): void {
   agentRuns.set(remaining);
   if (get(activeAgentRunId) === runId) {
     activeAgentRunId.set(remaining.at(-1)?.id ?? null);
+  }
+}
+
+export function closeGrokActivity(id: string): void {
+  grokActivities.update((activities) => activities.filter((activity) => activity.id !== id));
+  if (get(activeAgentRunId) === id) activeAgentRunId.set(null);
+}
+
+export function clearFinishedActivities(): void {
+  const running = get(grokActivities).filter((activity) => activity.status === "running");
+  grokActivities.set(running);
+  if (!running.some((activity) => activity.id === get(activeAgentRunId))) {
+    activeAgentRunId.set(null);
   }
 }
 

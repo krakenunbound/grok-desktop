@@ -9,7 +9,7 @@
   import RightPanel from "$lib/components/RightPanel.svelte";
   import AgentsWorkspace from "$lib/components/AgentsWorkspace.svelte";
   import PrivacyCenter from "$lib/components/PrivacyCenter.svelte";
-  import { agentRuns, bindAgentEvents } from "$lib/stores/agents";
+  import { agentRuns, bindAgentEvents, grokActivities } from "$lib/stores/agents";
   import { get } from "svelte/store";
   import {
     bindGrokEvents,
@@ -256,7 +256,8 @@
       {rightOpen}
       privacyProtected={$privacyAudit?.guard_enabled ?? false}
       privacyWarning={$privacyAudit?.account_retention_opt_out === false}
-      runningAgents={$agentRuns.filter((run) => run.status === "running").length}
+      runningAgents={$agentRuns.filter((run) => run.status === "running").length +
+        $grokActivities.filter((activity) => activity.status === "running").length}
       onagents={() => (agentsOpen = true)}
       onprivacy={() => (privacyOpen = true)}
       oncontext={toggleRight}

@@ -32,19 +32,51 @@ pub struct GrokCliCapability {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GrokCliOverview {
+    pub version: String,
+    pub commit: String,
+    pub channel: String,
+    pub compatibility: String,
     pub sessions: Vec<GrokCliSession>,
     pub worktrees: Vec<GrokCliWorktree>,
     pub capabilities: Vec<GrokCliCapability>,
     pub errors: Vec<String>,
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+struct GrokCliIdentity {
+    version: String,
+    commit: String,
+    channel: String,
+}
+
+fn parse_cli_identity(text: &str) -> GrokCliIdentity {
+    let mut parts = text.split_whitespace();
+    let _name = parts.next();
+    let version = parts.next().unwrap_or("unknown").to_string();
+    let commit = parts
+        .next()
+        .unwrap_or_default()
+        .trim_matches(['(', ')'])
+        .to_string();
+    let channel = parts
+        .next()
+        .unwrap_or_default()
+        .trim_matches(['[', ']'])
+        .to_string();
+    GrokCliIdentity {
+        version,
+        commit,
+        channel,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GrokUpdateStatus {
     pub current_version: String,
-    pub latest_version: String,
+    pub latest_version: Option<String>,
     pub update_available: bool,
-    pub installer: String,
+    pub installer: Option<String>,
     pub channel: String,
     pub auto_update: bool,
     pub error: Option<String>,
@@ -292,6 +324,12 @@ fn capabilities() -> Vec<GrokCliCapability> {
 pub fn overview(grok_binary_override: &str, cwd: Option<&str>) -> Result<GrokCliOverview, String> {
     let mut errors = Vec::new();
 
+    let identity = run_grok(grok_binary_override, None, &["--version"])
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| parse_cli_identity(&output_text(&output)))
+        .unwrap_or_default();
+
     let resolved_cwd = cwd.map(PathBuf::from);
     let sessions = match run_grok(
         grok_binary_override,
@@ -332,6 +370,10 @@ pub fn overview(grok_binary_override: &str, cwd: Option<&str>) -> Result<GrokCli
     };
 
     Ok(GrokCliOverview {
+        version: identity.version,
+        commit: identity.commit,
+        channel: identity.channel,
+        compatibility: "ACP v1 · direct billing/privacy · legacy fallbacks".into(),
         sessions,
         worktrees,
         capabilities: capabilities(),
@@ -341,7 +383,15 @@ pub fn overview(grok_binary_override: &str, cwd: Option<&str>) -> Result<GrokCli
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_sessions, parse_update_status, parse_worktrees};
+    use super::{parse_cli_identity, parse_sessions, parse_update_status, parse_worktrees};
+
+    #[test]
+    fn parses_grok_cli_identity() {
+        let identity = parse_cli_identity("grok 0.2.101 (5bc4b5dfad) [stable]");
+        assert_eq!(identity.version, "0.2.101");
+        assert_eq!(identity.commit, "5bc4b5dfad");
+        assert_eq!(identity.channel, "stable");
+    }
 
     #[test]
     fn parses_machine_readable_update_status() {
@@ -351,10 +401,22 @@ mod tests {
         .expect("update status should parse");
 
         assert_eq!(status.current_version, "0.2.99");
-        assert_eq!(status.latest_version, "0.2.101");
+        assert_eq!(status.latest_version.as_deref(), Some("0.2.101"));
         assert!(status.update_available);
         assert_eq!(status.channel, "stable");
         assert!(status.auto_update);
+    }
+
+    #[test]
+    fn parses_upstream_update_failure_contract() {
+        let status = parse_update_status(
+            br#"{"currentVersion":"0.2.99","latestVersion":null,"updateAvailable":false,"installer":"npm","channel":"stable","autoUpdate":true,"error":"npm view @latest failed: E403"}"#,
+        )
+        .expect("nullable upstream fields should parse");
+
+        assert!(status.latest_version.is_none());
+        assert_eq!(status.installer.as_deref(), Some("npm"));
+        assert!(status.error.as_deref().unwrap_or_default().contains("E403"));
     }
 
     #[test]

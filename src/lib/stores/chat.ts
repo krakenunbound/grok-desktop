@@ -65,10 +65,35 @@ export interface PermissionRequest {
   options: PermissionOption[];
 }
 
+export interface GrokQuestionOption {
+  label: string;
+  description: string;
+  preview?: string | null;
+  id?: string | null;
+}
+
+export interface GrokQuestion {
+  question: string;
+  options: GrokQuestionOption[];
+  multiSelect?: boolean | null;
+  id?: string | null;
+}
+
+export interface InteractionRequest {
+  request_id: string;
+  kind: "question" | "plan_approval";
+  session_id: string;
+  tool_call_id: string;
+  mode?: "default" | "plan" | null;
+  questions: GrokQuestion[];
+  plan_content?: string | null;
+}
+
 export const currentChat = writable<ChatSession | null>(null);
 export const chatList = writable<ChatSession[]>([]);
 export const pendingAttachments = writable<PendingAttachment[]>([]);
 export const pendingPermission = writable<PermissionRequest | null>(null);
+export const pendingInteraction = writable<InteractionRequest | null>(null);
 export const isRunning = writable(false);
 export const runningSince = writable<number | null>(null);
 export const status = writable<GrokStatus>({
@@ -307,6 +332,18 @@ export async function bindGrokEvents(): Promise<void> {
   );
 
   unlisteners.push(
+    await listen<InteractionRequest>("grok-interaction-request", (ev) => {
+      pendingInteraction.set(ev.payload);
+    }),
+  );
+
+  unlisteners.push(
+    await listen<string>("grok-interaction-resolved", (ev) => {
+      pendingInteraction.update((request) => (request?.request_id === ev.payload ? null : request));
+    }),
+  );
+
+  unlisteners.push(
     await listen<string>("grok-stdout-chunk", (ev) => {
       appendStreamChunk(ev.payload);
       flushStreamingUi(false);
@@ -378,6 +415,7 @@ export async function bindGrokEvents(): Promise<void> {
       stop_reason?: string | null;
     }>("grok-done", async (ev) => {
       pendingPermission.set(null);
+      pendingInteraction.set(null);
       const permissionBlocked = ev.payload.stop_reason === "permission_cancelled";
       const agentCancelled =
         !ev.payload.cancelled && !ev.payload.success && ev.payload.stop_reason === "cancelled";
@@ -491,6 +529,20 @@ export async function resolvePermission(optionId: string | null): Promise<void> 
       optionId,
     });
     pendingPermission.set(null);
+  } catch (error) {
+    showError(error);
+  }
+}
+
+export async function resolveInteraction(response: Record<string, unknown>): Promise<void> {
+  const request = get(pendingInteraction);
+  if (!request) return;
+  try {
+    await invoke("resolve_grok_interaction", {
+      requestId: request.request_id,
+      response,
+    });
+    pendingInteraction.set(null);
   } catch (error) {
     showError(error);
   }
